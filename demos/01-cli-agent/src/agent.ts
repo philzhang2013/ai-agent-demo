@@ -21,7 +21,7 @@ export class Agent {
 
     if (this.mockMode) {
       this.client = null;
-      console.log('🧪 Agent 运行在模拟模式（不会调用真实 API）');
+      process.stderr.write('🧪 Agent 运行在模拟模式（不会调用真实 API）\n');
     } else {
       this.client = new ZhipuAI({ apiKey: options.apiKey });
     }
@@ -211,7 +211,7 @@ ARGUMENTS: {"expression": "18 + 25"}
       this.iterationCount++;
 
       if (!this.mockMode) {
-        console.log(`\n🔄 [Agent 迭代 ${this.iterationCount}]`);
+        process.stderr.write(`\n🔄 [Agent 迭代 ${this.iterationCount}]\n`);
       }
 
       // 调用 LLM
@@ -222,15 +222,15 @@ ARGUMENTS: {"expression": "18 + 25"}
 
       if (toolCall) {
         if (!this.mockMode) {
-          console.log(`📋 思考: 需要调用工具 "${toolCall.name}"`);
-          console.log(`📝 参数: ${JSON.stringify(toolCall.arguments)}`);
+          process.stderr.write(`📋 思考: 需要调用工具 "${toolCall.name}"\n`);
+          process.stderr.write(`📝 参数: ${JSON.stringify(toolCall.arguments)}\n`);
         }
 
         // 执行工具
         const result = await this.executeTool(toolCall.name, toolCall.arguments);
 
         if (!this.mockMode) {
-          console.log(`✅ 工具结果: ${result}`);
+          process.stderr.write(`✅ 工具结果: ${result}\n`);
         }
 
         // 添加工具结果到消息历史

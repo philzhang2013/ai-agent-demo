@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(mkdir *)",
+      "Bash(rm *)",
+      "Bash(ls *)",
+      "Bash(pwd)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(echo *)",
+      "Bash(cat *)",
+      "Bash(sleep *)",
+      "Bash(kill *)",
+      "Bash(lsof *)",
+      "Bash(curl *)",
+      "Bash(find *)",
+      "Bash(which *)",
+      "Bash(cd *)",
+      "Bash(cd * && git *)",
+      "Bash(cd * && npm *)",
+      "Bash(cd * && npx *)",
+      "Bash(cd * && node *)",
+      "Bash(cd * && ls *)",
+      "Bash(cd * && cat *)",
+      "Bash(cd * && echo *)",
+      "Bash(cd * && mkdir *)",
+      "Bash(cd * && rm *)",
+      "Bash(cd * && cp *)",
+      "Bash(cd * && mv *)",
+      "Bash(cd * && find *)",
+      "Bash(cd * && chmod *)",
+      "Bash(mv:*)",
+      "Bash(./repo.sh log:*)",
+      "Bash(yarn add:*)",
+      "WebSearch",
+      "Bash(/Users/philzhang/ClaudeCodeDemo/ai-agent-demo/demos/01-cli-agent/tsconfig.json:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(git push --force *)"
+    ]
+  }
+}
