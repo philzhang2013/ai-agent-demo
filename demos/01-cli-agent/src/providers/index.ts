@@ -32,4 +32,4 @@ export function createClient(
 }
 
 // 导出类型
-export type { LLMClient, ChatParams, ChatResponse, TokenUsage } from './base.js';
+export type { LLMClient, ChatParams, ChatResponse, TokenUsage, FunctionDefinition, ToolCall } from './base.js';

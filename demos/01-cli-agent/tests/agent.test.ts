@@ -180,7 +180,7 @@ describe('Agent 类测试', () => {
 
       // 3. 验证消息历史包含工具调用相关消息
       const messages = agent.getMessages();
-      expect(messages.some(m => m.role === 'function')).toBe(true);
+      expect(messages.some(m => m.role === 'tool' || (m as any).tool_calls?.length > 0)).toBe(true);
     });
 
     it('应该处理天气查询工具调用', async () => {

@@ -1,4 +1,37 @@
-import type { Message, ToolMessage } from '../types.js';
+import type { Message, ToolMessage, Tool } from '../types.js';
+
+/**
+ * 函数调用参数属性
+ */
+export interface FunctionProperty {
+  type: string;
+  description: string;
+}
+
+/**
+ * 函数定义
+ */
+export interface FunctionDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: string;
+    properties: Record<string, FunctionProperty>;
+    required?: string[];
+  };
+}
+
+/**
+ * 工具调用
+ */
+export interface ToolCall {
+  id?: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
 
 /**
  * 聊天请求参数
@@ -7,6 +40,7 @@ export interface ChatParams {
   model: string;
   messages: (Message | ToolMessage)[];
   stream?: boolean;
+  tools?: Array<{ type: 'function'; function: FunctionDefinition }>;
 }
 
 /**
@@ -23,6 +57,7 @@ export interface TokenUsage {
  */
 export interface ChatResponse {
   content: string;
+  tool_calls?: ToolCall[];
   usage?: TokenUsage;
 }
 

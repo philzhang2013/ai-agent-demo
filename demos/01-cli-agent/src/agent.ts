@@ -1,6 +1,6 @@
-import { createClient, LLMProvider, type LLMClient } from './providers/index.js';
+import { createClient, LLMProvider, type LLMClient, type FunctionDefinition, type ToolCall as ProviderToolCall } from './providers/index.js';
 import type { Message, ToolMessage, ToolCall, AgentOptions } from './types.js';
-import { tools, getToolDescriptions, findTool } from './tools.js';
+import { tools, findTool } from './tools.js';
 import { logger, formatMessages, separator, formatJSON } from './logger.js';
 
 // 默认模型配置
@@ -53,23 +53,10 @@ export class Agent {
   }
 
   /**
-   * 获取系统提示词
+   * 获取系统提示词（Function Calling 模式）
    */
   private getSystemPrompt(): string {
-    const toolDescriptions = getToolDescriptions();
-
-    return `你是一个智能 AI 助手，可以帮助用户回答问题并使用工具完成任务。
-
-可用的工具:
-${toolDescriptions}
-
-当需要使用工具时，请按以下格式返回:
-TOOL_CALL: <工具名称>
-ARGUMENTS: <JSON 格式的参数>
-
-例如:
-TOOL_CALL: calculator
-ARGUMENTS: {"expression": "18 + 25"}
+    return `你是一个智能 AI 劏手，可以帮助用户回答问题并使用工具完成任务。
 
 工具调用结果会自动添加到对话中，请根据结果给用户一个友好的回复。
 
@@ -77,23 +64,21 @@ ARGUMENTS: {"expression": "18 + 25"}
   }
 
   /**
-   * 解析 LLM 响应中的工具调用
+   * 将工具转换为 Function Calling 格式
    */
-  private parseToolCall(content: string): ToolCall | null {
-    const toolCallMatch = content.match(/TOOL_CALL:\s*(\w+)/);
-    const argsMatch = content.match(/ARGUMENTS:\s*(\{.*\})/);
-
-    if (toolCallMatch && argsMatch) {
-      try {
-        return {
-          name: toolCallMatch[1],
-          arguments: JSON.parse(argsMatch[1])
-        };
-      } catch {
-        return null;
+  private getToolDefinitions(): Array<{ type: 'function'; function: FunctionDefinition }> {
+    return tools.map(tool => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: {
+          type: tool.parameters.type,
+          properties: tool.parameters.properties as any,
+          required: tool.parameters.required || []
+        }
       }
-    }
-    return null;
+    }));
   }
 
   /**
@@ -108,12 +93,64 @@ ARGUMENTS: {"expression": "18 + 25"}
   }
 
   /**
-   * 调用 LLM API
+   * 调用 LLM API（Function Calling 模式）
    */
-  private async callLLM(): Promise<string> {
+  private async callLLM(): Promise<{ content: string; toolCalls?: ProviderToolCall[] }> {
     // 模拟模式返回预设响应
     if (this.mockMode) {
-      return this.mockLLMResponse();
+      const lastMessage = this.messages[this.messages.length - 1];
+
+      // 检查是否是工具结果
+      if ((lastMessage as any).role === 'tool' || lastMessage.role === 'function') {
+        // 工具执行后，返回友好的最终回复
+        const toolName = (lastMessage as any).tool_call_id ? this.getToolNameFromCallId((lastMessage as any).tool_call_id) : (lastMessage as ToolMessage).name;
+        const result = lastMessage.content;
+
+        if (toolName === 'calculator') {
+          return { content: `计算结果: ${result}\n\n如果你还有其他计算需求，随时告诉我！` };
+        }
+        if (toolName === 'get_weather') {
+          return { content: `${result}\n\n如果你想查询其他城市的天气，也可以告诉我！` };
+        }
+        return { content: `工具调用完成：${result}` };
+      }
+
+      // 分析用户输入并决定是否调用工具
+      const userContent = lastMessage.content.toLowerCase();
+
+      // 检查是否是计算请求
+      if (userContent.includes('计算') || /\d+[\+\-\*\/]\d+/.test(userContent)) {
+        const expr = this.parseMathExpression(userContent);
+        return {
+          content: '',
+          toolCalls: [{
+            type: 'function',
+            function: {
+              name: 'calculator',
+              arguments: JSON.stringify({ expression: expr })
+            }
+          }]
+        };
+      }
+
+      // 检查是否是天气查询
+      if (userContent.includes('天气') || userContent.includes('气温')) {
+        // 提取城市名称
+        const cities = ['北京', '上海', '深圳', '广州'];
+        const city = cities.find(c => userContent.includes(c)) || '北京';
+        return {
+          content: '',
+          toolCalls: [{
+            type: 'function',
+            function: {
+              name: 'get_weather',
+              arguments: JSON.stringify({ city })
+            }
+          }]
+        };
+      }
+
+      return { content: this.mockLLMResponse() };
     }
 
     if (!this.client) {
@@ -121,14 +158,20 @@ ARGUMENTS: {"expression": "18 + 25"}
     }
 
     try {
-      // 使用统一的适配器接口
+      // 获取工具定义
+      const toolDefinitions = this.getToolDefinitions();
+
+      logger.debug('AGENT', `🛠️  工具定义: ${JSON.stringify(toolDefinitions.map(t => t.function.name))}`);
+
+      // 使用统一的适配器接口，传递 tools 参数
       const response = await this.client.chat({
         model: this.model,
         messages: this.messages,
+        tools: toolDefinitions,
         stream: false
       });
 
-      if (!response.content) {
+      if (!response.content && !response.tool_calls) {
         throw new Error('LLM 返回空响应');
       }
 
@@ -137,7 +180,10 @@ ARGUMENTS: {"expression": "18 + 25"}
         logger.info('TOKEN', `📊 Token 使用: 输入=${response.usage.prompt_tokens}, 输出=${response.usage.completion_tokens}, 总计=${response.usage.total_tokens}`);
       }
 
-      return response.content;
+      return {
+        content: response.content || '',
+        toolCalls: response.tool_calls
+      };
     } catch (error: any) {
       logger.error('LLM', `❌ API 调用失败: ${error.message}`);
       throw error;
@@ -145,14 +191,14 @@ ARGUMENTS: {"expression": "18 + 25"}
   }
 
   /**
-   * 模拟 LLM 响应（用于测试）
+   * 模拟 LLM 响应（用于测试，Function Calling 模式）
    */
   private mockLLMResponse(): string {
     const lastMessage = this.messages[this.messages.length - 1];
 
-    if (lastMessage.role === 'function') {
-      // 如果最后一条是工具结果，返回友好的回复
-      const toolName = (lastMessage as ToolMessage).name;
+    // 检查是否是工具结果
+    if ((lastMessage as any).role === 'tool' || lastMessage.role === 'function') {
+      const toolName = (lastMessage as any).tool_call_id ? this.getToolNameFromCallId((lastMessage as any).tool_call_id) : (lastMessage as ToolMessage).name;
       const result = lastMessage.content;
 
       if (toolName === 'calculator') {
@@ -170,18 +216,27 @@ ARGUMENTS: {"expression": "18 + 25"}
     // 检查是否是计算请求
     if (userContent.includes('计算') || /\d+[\+\-\*\/]\d+/.test(userContent)) {
       const expr = this.parseMathExpression(userContent);
-      return `TOOL_CALL: calculator\nARGUMENTS: {"expression": "${expr}"}`;
+      // 返回一个空响应，tool_calls 会在 callLLM 中构造
+      return '';
     }
 
     // 检查是否是天气查询
     if (userContent.includes('天气') || userContent.includes('气温')) {
-      // 提取城市名称
-      const cities = ['北京', '上海', '深圳', '广州'];
-      const city = cities.find(c => userContent.includes(c)) || '北京';
-      return `TOOL_CALL: get_weather\nARGUMENTS: {"city": "${city}"}`;
+      // 返回一个空响应，tool_calls 会在 callLLM 中构造
+      return '';
     }
 
     return '我是模拟模式下的 AI 助手。你可以让我进行数学计算（如"计算 18 + 25"）或查询天气（如"北京天气"）。';
+  }
+
+  /**
+   * 从 tool_call_id 中提取工具名称（用于模拟模式）
+   */
+  private getToolNameFromCallId(callId: string): string {
+    // 简单的实现，假设 callId 包含工具名称
+    if (callId.includes('calculator')) return 'calculator';
+    if (callId.includes('get_weather')) return 'get_weather';
+    return 'unknown';
   }
 
   /**
@@ -223,7 +278,7 @@ ARGUMENTS: {"expression": "18 + 25"}
   }
 
   /**
-   * 处理用户输入
+   * 处理用户输入（Function Calling 模式）
    */
   async processUserInput(userInput: string): Promise<string> {
     this.iterationCount = 0;
@@ -235,6 +290,7 @@ ARGUMENTS: {"expression": "18 + 25"}
     // 添加用户消息到历史
     this.messages.push({ role: 'user', content: userInput });
     logger.debug('MEMORY', `消息历史长度: ${this.messages.length} 条`);
+    logger.debug('MEMORY', `消息历史内容: ${JSON.stringify(this.messages)}`);
 
     while (this.iterationCount < this.maxIterations) {
       this.iterationCount++;
@@ -247,45 +303,65 @@ ARGUMENTS: {"expression": "18 + 25"}
       logger.debug('LLM', formatMessages(this.messages));
 
       // 调用 LLM
-      const response = await this.callLLM();
+      const { content, toolCalls } = await this.callLLM();
 
       // 日志: LLM 响应
       logger.debug('LLM', '📥 收到 LLM 响应:');
-      logger.debug('LLM', `  ${response.substring(0, 200)}${response.length > 200 ? '...' : ''}`);
+      if (toolCalls && toolCalls.length > 0) {
+        logger.debug('LLM', `  工具调用: ${JSON.stringify(toolCalls)}`);
+      } else {
+        logger.debug('LLM', `  ${content.substring(0, 200)}${content.length > 200 ? '...' : ''}`);
+      }
 
-      // 检查是否需要调用工具
-      const toolCall = this.parseToolCall(response);
+      // 检查是否有工具调用
+      if (toolCalls && toolCalls.length > 0) {
+        for (const toolCall of toolCalls) {
+          const toolName = toolCall.function.name;
+          let toolArgs: Record<string, any>;
 
-      if (toolCall) {
-        logger.info('AGENT', `🔧 识别工具调用: ${toolCall.name}`);
-        logger.info('AGENT', `📋 参数: ${formatJSON(toolCall.arguments)}`);
+          // 解析参数（可能是字符串或已解析的对象）
+          try {
+            toolArgs = typeof toolCall.function.arguments === 'string'
+              ? JSON.parse(toolCall.function.arguments)
+              : toolCall.function.arguments;
+          } catch {
+            logger.error('AGENT', `❌ 无法解析工具参数: ${toolCall.function.arguments}`);
+            toolArgs = {};
+          }
 
-        // 执行工具
-        logger.info('TOOL', `⚙️  执行工具: ${toolCall.name}`);
-        const result = await this.executeTool(toolCall.name, toolCall.arguments);
+          logger.info('AGENT', `🔧 识别工具调用: ${toolName}`);
+          logger.info('AGENT', `📋 参数: ${formatJSON(toolArgs)}`);
 
-        logger.success('TOOL', `✨ 工具结果: ${result}`);
+          // 执行工具
+          logger.info('TOOL', `⚙️  执行工具: ${toolName}`);
+          const result = await this.executeTool(toolName, toolArgs);
 
-        // 添加工具结果到消息历史
-        this.messages.push({
-          role: 'assistant',
-          content: response
-        });
-        this.messages.push({
-          role: 'function',
-          content: result,
-          name: toolCall.name
-        });
+          logger.success('TOOL', `✨ 工具结果: ${result}`);
 
-        logger.debug('MEMORY', `📝 已添加工具结果到历史，当前消息数: ${this.messages.length}`);
+          // 添加工具调用到历史（Function Calling 格式）
+          this.messages.push({
+            role: 'assistant',
+            content: content || '',
+            tool_calls: [toolCall]
+          } as any);
+
+          // 添加工具结果到历史
+          this.messages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id || '',
+            content: result
+          } as any);
+
+          logger.debug('MEMORY', `📝 已添加工具结果到历史，当前消息数: ${this.messages.length}`);
+        }
 
         continue; // 继续循环，让 LLM 基于工具结果生成最终回复
       }
 
       // 返回最终回复
-      logger.success('AGENT', `✅ 最终回复: ${response.substring(0, 100)}${response.length > 100 ? '...' : ''}`);
+      logger.success('AGENT', `✅ 最终回复: ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`);
       logger.info('AGENT', separator('═', 60));
-      return response;
+      return content;
     }
 
     logger.warning('AGENT', '⚠️  达到最大迭代次数');
