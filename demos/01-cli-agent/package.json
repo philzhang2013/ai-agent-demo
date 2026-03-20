@@ -5,22 +5,32 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "dev:mock": "MOCK_LLM=true tsx watch src/index.ts",
+    "dev": "tsx src/index.ts",
+    "dev:watch": "tsx watch src/index.ts",
+    "dev:mock": "MOCK_LLM=true tsx src/index.ts",
+    "dev:minimax": "LLM_PROVIDER=minimax tsx src/index.ts",
+    "dev:kimi": "LLM_PROVIDER=kimi tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "test:api": "tsx src/test-api.ts",
+    "test:api:zhipuai": "tsx src/test-api.ts --provider=zhipuai",
+    "test:api:minimax": "tsx src/test-api.ts --provider=minimax",
+    "test:api:kimi": "tsx src/test-api.ts --provider=kimi"
   },
   "keywords": [
     "ai-agent",
     "llm",
-    "zhipuai"
+    "zhipuai",
+    "minimax",
+    "anthropic"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "dotenv": "^16.4.1",
     "zhipuai-sdk-nodejs-v4": "^0.1.12"
   },

@@ -1,4 +1,6 @@
+import { log } from 'console';
 import type { Tool } from './types.js';
+import { logger } from './logger.js';
 
 // ========== 工具定义 ==========
 
@@ -23,6 +25,7 @@ export const calculatorTool: Tool = {
     try {
       // 去除表达式前后空格
       const expression = args.expression.trim();
+      logger.info("TOOL", `执行计算器工具: ${expression}`);
       // 安全地计算表达式
       const result = Function('"use strict"; return (' + expression + ')')();
       return `计算结果: ${expression} = ${result}`;

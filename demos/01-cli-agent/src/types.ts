@@ -1,5 +1,11 @@
 // ========== 类型定义 ==========
 
+// 先导入类型再使用
+import { LLMProvider } from './providers/index.js';
+
+// 重新导出提供商类型
+export { LLMProvider, type LLMClient, type ChatParams, type ChatResponse } from './providers/index.js';
+
 /**
  * 对话消息
  */
@@ -43,7 +49,13 @@ export interface Tool {
  * Agent 配置选项
  */
 export interface AgentOptions {
-  apiKey: string;
+  // 新的多提供商配置
+  provider?: LLMProvider;
+  apiKey?: string;
+  baseURL?: string;
+  model?: string;
+
+  // 向后兼容的配置
   maxIterations?: number;
   mockMode?: boolean;
 }

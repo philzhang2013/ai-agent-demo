@@ -1,6 +1,14 @@
-import { ZhipuAI } from 'zhipuai-sdk-nodejs-v4';
+import { createClient, LLMProvider, type LLMClient } from './providers/index.js';
 import type { Message, ToolMessage, ToolCall, AgentOptions } from './types.js';
 import { tools, getToolDescriptions, findTool } from './tools.js';
+import { logger, formatMessages, separator, formatJSON } from './logger.js';
+
+// 默认模型配置
+const DEFAULT_MODELS: Record<LLMProvider, string> = {
+  [LLMProvider.ZHIPUAI]: 'glm-5',
+  [LLMProvider.MINIMAX]: 'M2-her',
+  [LLMProvider.KIMI]: 'moonshot-v1-8k'
+};
 
 // ========== Agent 类 ==========
 
@@ -9,13 +17,18 @@ import { tools, getToolDescriptions, findTool } from './tools.js';
  * 负责与 LLM 交互，处理工具调用，管理对话状态
  */
 export class Agent {
-  private client: ZhipuAI | null;
+  private client: LLMClient | null;
   private messages: (Message | ToolMessage)[] = [];
   private maxIterations: number;
   private iterationCount: number = 0;
   private mockMode: boolean;
+  private provider: LLMProvider;
+  private model: string;
 
   constructor(options: AgentOptions) {
+    // 默认使用智谱 AI（向后兼容）
+    this.provider = options.provider ?? LLMProvider.ZHIPUAI;
+    this.model = options.model ?? DEFAULT_MODELS[this.provider];
     this.maxIterations = options.maxIterations ?? 5;
     this.mockMode = options.mockMode ?? false;
 
@@ -23,7 +36,14 @@ export class Agent {
       this.client = null;
       process.stderr.write('🧪 Agent 运行在模拟模式（不会调用真实 API）\n');
     } else {
-      this.client = new ZhipuAI({ apiKey: options.apiKey });
+      // 验证 API Key
+      if (!options.apiKey) {
+        throw new Error(`未提供 ${this.provider} 的 API Key`);
+      }
+
+      // 使用工厂创建客户端
+      this.client = createClient(this.provider, options.apiKey, options.baseURL);
+      process.stderr.write(`🔌 已连接到 ${this.provider} (模型: ${this.model})\n`);
     }
 
     this.messages.push({
@@ -101,23 +121,25 @@ ARGUMENTS: {"expression": "18 + 25"}
     }
 
     try {
-      const data = await this.client.createCompletions({
-        model: 'glm-4',
-        messages: this.messages.map(m => ({
-          role: m.role,
-          content: m.content,
-          ...(m.role === 'function' && { name: (m as ToolMessage).name })
-        })),
+      // 使用统一的适配器接口
+      const response = await this.client.chat({
+        model: this.model,
+        messages: this.messages,
         stream: false
-      }) as any;
+      });
 
-      if (data.choices && data.choices[0]) {
-        return data.choices[0].message.content || '';
+      if (!response.content) {
+        throw new Error('LLM 返回空响应');
       }
 
-      throw new Error('LLM 返回空响应');
-    } catch (error) {
-      console.error('LLM 调用错误:', error);
+      // 日志: Token 使用情况
+      if (response.usage) {
+        logger.info('TOKEN', `📊 Token 使用: 输入=${response.usage.prompt_tokens}, 输出=${response.usage.completion_tokens}, 总计=${response.usage.total_tokens}`);
+      }
+
+      return response.content;
+    } catch (error: any) {
+      logger.error('LLM', `❌ API 调用失败: ${error.message}`);
       throw error;
     }
   }
@@ -205,33 +227,44 @@ ARGUMENTS: {"expression": "18 + 25"}
    */
   async processUserInput(userInput: string): Promise<string> {
     this.iterationCount = 0;
+
+    // 日志: 开始处理用户输入
+    logger.info('AGENT', separator('═', 60));
+    logger.info('AGENT', `👤 用户输入: ${userInput}`);
+
+    // 添加用户消息到历史
     this.messages.push({ role: 'user', content: userInput });
+    logger.debug('MEMORY', `消息历史长度: ${this.messages.length} 条`);
 
     while (this.iterationCount < this.maxIterations) {
       this.iterationCount++;
 
-      if (!this.mockMode) {
-        process.stderr.write(`\n🔄 [Agent 迭代 ${this.iterationCount}]\n`);
-      }
+      logger.info('AGENT', separator('─', 40));
+      logger.info('AGENT', `🔄 第 ${this.iterationCount} 次迭代`);
+
+      // 日志: 发送给 LLM 的消息
+      logger.debug('LLM', '📤 发送请求到 LLM:');
+      logger.debug('LLM', formatMessages(this.messages));
 
       // 调用 LLM
       const response = await this.callLLM();
+
+      // 日志: LLM 响应
+      logger.debug('LLM', '📥 收到 LLM 响应:');
+      logger.debug('LLM', `  ${response.substring(0, 200)}${response.length > 200 ? '...' : ''}`);
 
       // 检查是否需要调用工具
       const toolCall = this.parseToolCall(response);
 
       if (toolCall) {
-        if (!this.mockMode) {
-          process.stderr.write(`📋 思考: 需要调用工具 "${toolCall.name}"\n`);
-          process.stderr.write(`📝 参数: ${JSON.stringify(toolCall.arguments)}\n`);
-        }
+        logger.info('AGENT', `🔧 识别工具调用: ${toolCall.name}`);
+        logger.info('AGENT', `📋 参数: ${formatJSON(toolCall.arguments)}`);
 
         // 执行工具
+        logger.info('TOOL', `⚙️  执行工具: ${toolCall.name}`);
         const result = await this.executeTool(toolCall.name, toolCall.arguments);
 
-        if (!this.mockMode) {
-          process.stderr.write(`✅ 工具结果: ${result}\n`);
-        }
+        logger.success('TOOL', `✨ 工具结果: ${result}`);
 
         // 添加工具结果到消息历史
         this.messages.push({
@@ -244,13 +277,19 @@ ARGUMENTS: {"expression": "18 + 25"}
           name: toolCall.name
         });
 
+        logger.debug('MEMORY', `📝 已添加工具结果到历史，当前消息数: ${this.messages.length}`);
+
         continue; // 继续循环，让 LLM 基于工具结果生成最终回复
       }
 
       // 返回最终回复
+      logger.success('AGENT', `✅ 最终回复: ${response.substring(0, 100)}${response.length > 100 ? '...' : ''}`);
+      logger.info('AGENT', separator('═', 60));
       return response;
     }
 
+    logger.warning('AGENT', '⚠️  达到最大迭代次数');
+    logger.info('AGENT', separator('═', 60));
     return '达到最大迭代次数，请重新尝试。';
   }
 
@@ -276,5 +315,19 @@ ARGUMENTS: {"expression": "18 + 25"}
    */
   isMockMode(): boolean {
     return this.mockMode;
+  }
+
+  /**
+   * 获取当前提供商
+   */
+  getProvider(): LLMProvider {
+    return this.provider;
+  }
+
+  /**
+   * 获取当前模型
+   */
+  getModel(): string {
+    return this.model;
   }
 }
