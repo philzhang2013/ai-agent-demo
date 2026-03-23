@@ -1,6 +1,7 @@
 """
 会话管理端点
 """
+import logging
 from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends
 
@@ -11,6 +12,7 @@ from app.auth.jwt import TokenPayload
 from app.db.repositories import UserRepository
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+logger = logging.getLogger(__name__)
 
 user_repo = UserRepository()
 session_repo = SessionRepository()
@@ -26,9 +28,12 @@ async def get_sessions(
 
     需要认证
     """
+    logger.debug(f"[GET /api/sessions] 获取会话列表: user_id={current_user.sub}")
+
     # 验证用户存在
     user = await user_repo.find_by_id(current_user.sub)
     if not user:
+        logger.warning(f"[GET /api/sessions] 用户不存在: user_id={current_user.sub}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
@@ -36,6 +41,7 @@ async def get_sessions(
 
     # 获取会话列表
     sessions = await session_repo.find_by_user_id(user.id)
+    logger.info(f"[GET /api/sessions] 返回 {len(sessions)} 个会话: user_id={user.id}")
 
     return [
         APISession(
@@ -59,9 +65,12 @@ async def get_session(
 
     需要认证
     """
+    logger.debug(f"[GET /api/sessions/{session_id}] 获取会话详情: user_id={current_user.sub}")
+
     # 验证用户存在
     user = await user_repo.find_by_id(current_user.sub)
     if not user:
+        logger.warning(f"[GET /api/sessions/{session_id}] 用户不存在: user_id={current_user.sub}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
@@ -70,6 +79,7 @@ async def get_session(
     # 获取会话
     session = await session_repo.find_by_id(session_id)
     if not session:
+        logger.warning(f"[GET /api/sessions/{session_id}] 会话不存在: session_id={session_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="会话不存在"
@@ -77,6 +87,7 @@ async def get_session(
 
     # 验证会话所有权
     if session.user_id != user.id:
+        logger.warning(f"[GET /api/sessions/{session_id}] 无权访问: session_user_id={session.user_id}, request_user_id={user.id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="无权访问此会话"
@@ -84,6 +95,7 @@ async def get_session(
 
     # 获取消息
     messages = await message_repo.find_by_session_id(session.id)
+    logger.debug(f"[GET /api/sessions/{session_id}] 返回 {len(messages)} 条消息")
 
     return APISession(
         id=session.id,
@@ -113,9 +125,12 @@ async def delete_session(
 
     需要认证
     """
+    logger.info(f"[DELETE /api/sessions/{session_id}] 删除会话请求: user_id={current_user.sub}")
+
     # 验证用户存在
     user = await user_repo.find_by_id(current_user.sub)
     if not user:
+        logger.warning(f"[DELETE /api/sessions/{session_id}] 用户不存在: user_id={current_user.sub}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
@@ -124,6 +139,7 @@ async def delete_session(
     # 获取会话
     session = await session_repo.find_by_id(session_id)
     if not session:
+        logger.warning(f"[DELETE /api/sessions/{session_id}] 会话不存在: session_id={session_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="会话不存在"
@@ -131,15 +147,17 @@ async def delete_session(
 
     # 验证会话所有权
     if session.user_id != user.id:
+        logger.warning(f"[DELETE /api/sessions/{session_id}] 无权删除: session_user_id={session.user_id}, request_user_id={user.id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="无权删除此会话"
         )
 
     # 删除消息
-    await message_repo.delete_by_session_id(session_id)
+    deleted_messages = await message_repo.delete_by_session_id(session_id)
 
     # 删除会话
     await session_repo.delete(session_id)
 
+    logger.info(f"[DELETE /api/sessions/{session_id}] 删除成功: 删除了 {deleted_messages} 条消息")
     return {"success": True}

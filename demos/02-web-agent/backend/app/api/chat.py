@@ -19,6 +19,19 @@ logger = logging.getLogger(__name__)
 def get_agent() -> Agent:
     """获取 Agent 实例（依赖注入）"""
     settings = get_settings()
+    agent = Agent(
+        provider="zhipuai",
+        api_key=settings.zhipuai_api_key,
+        model=settings.zhipuai_model,
+        max_iterations=settings.max_iterations
+    )
+    logger.debug(f"[创建 Agent] model={settings.zhipuai_model}, max_iterations={settings.max_iterations}")
+    return agent
+
+
+def get_agent() -> Agent:
+    """获取 Agent 实例（依赖注入）"""
+    settings = get_settings()
     return Agent(
         provider="zhipuai",
         api_key=settings.zhipuai_api_key,
@@ -30,40 +43,51 @@ def get_agent() -> Agent:
 @router.post("", response_model=ChatResponse)
 async def chat(request: ChatRequest, agent: Agent = Depends(get_agent)):
     """非流式聊天端点"""
+    session_id = request.session_id or "default-session"
+    logger.info(f"[POST /api/chat] session_id={session_id}, message={request.message[:50]}{'...' if len(request.message) > 50 else ''}")
+
     try:
         response = await agent.process_message(request.message)
+
+        logger.info(f"[POST /api/chat] 响应成功, session_id={session_id}, content={response.content[:50]}{'...' if response.content and len(response.content) > 50 else ''}")
+
         return ChatResponse(
             response=response.content,
-            session_id=request.session_id or "default-session"
+            session_id=session_id
         )
     except Exception as e:
-        logger.error(f"聊天错误: {e}")
+        logger.error(f"[POST /api/chat] 错误: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/stream")
 async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
     """流式聊天端点（SSE）"""
+    session_id = request.session_id or "default"
+    logger.info(f"[POST /api/chat/stream] session_id={session_id}, message={request.message[:50]}{'...' if len(request.message) > 50 else ''}")
 
     async def event_generator():
         """生成 SSE 事件"""
+        token_count = 0
         try:
             # 使用 Agent 的流式处理方法
             async for token in agent.process_message_stream(request.message):
+                token_count += 1
                 yield {
                     "event": "token",
                     "data": json.dumps({"content": token})
                 }
 
             # 发送完成事件
+            logger.info(f"[POST /api/chat/stream] 流式完成, session_id={session_id}, tokens={token_count}")
             yield {
                 "event": "done",
-                "data": json.dumps({"session_id": request.session_id or "default"})
+                "data": json.dumps({"session_id": session_id})
             }
 
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"流式聊天错误: {error_msg}")
+            logger.error(f"[POST /api/chat/stream] 错误: {error_msg}", exc_info=True)
 
             # 提供更友好的错误信息
             if "1113" in error_msg or "余额不足" in error_msg:
@@ -74,6 +98,8 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
                 friendly_error = "API 认证失败，请检查配置"
             else:
                 friendly_error = f"服务暂时不可用: {error_msg}"
+
+            logger.warning(f"[POST /api/chat/stream] 友好错误信息: {friendly_error}")
 
             # 发送错误事件
             yield {

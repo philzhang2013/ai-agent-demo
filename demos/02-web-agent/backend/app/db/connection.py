@@ -2,6 +2,7 @@
 数据库连接管理
 """
 import asyncio
+import logging
 from typing import AsyncIterator
 import asyncpg
 from asyncpg import Connection, Pool
@@ -9,6 +10,7 @@ from asyncpg import Connection, Pool
 from app.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 # 全局连接池
 _pool: Pool | None = None
@@ -23,11 +25,13 @@ class AsyncConnectionContext:
 
     async def __aenter__(self) -> Connection:
         self._connection = await self._pool.acquire()
+        logger.debug(f"[数据库连接] 从连接池获取连接: pool_size={self._pool.get_size() if hasattr(self._pool, 'get_size') else 'unknown'}")
         return self._connection
 
     async def __aexit__(self, *args):
         if self._connection:
             await self._pool.release(self._connection)
+            logger.debug("[数据库连接] 释放连接回连接池")
 
 
 async def get_pool() -> Pool:
@@ -35,12 +39,16 @@ async def get_pool() -> Pool:
     global _pool
 
     if _pool is None:
+        logger.info(f"[数据库连接池] 创建连接池: min_size=2, max_size=10")
         _pool = await asyncpg.create_pool(
             settings.database_url,
             min_size=2,
             max_size=10,
             command_timeout=60
         )
+        logger.info("[数据库连接池] 连接池创建成功")
+    else:
+        logger.debug(f"[数据库连接池] 使用现有连接池")
 
     return _pool
 
@@ -92,5 +100,7 @@ async def close_pool():
     global _pool
 
     if _pool:
+        logger.info("[数据库连接池] 正在关闭连接池...")
         await _pool.close()
         _pool = None
+        logger.info("[数据库连接池] 连接池已关闭")
