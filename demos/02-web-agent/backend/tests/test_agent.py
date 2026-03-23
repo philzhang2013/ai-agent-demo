@@ -27,7 +27,7 @@ class TestAgent:
 
         assert agent.provider == "zhipuai"
         assert agent.api_key == "test-key"
-        assert agent.model == "glm-4"
+        assert agent.model == "glm-5"
 
     @pytest.mark.asyncio
     async def test_should_process_simple_message(self):

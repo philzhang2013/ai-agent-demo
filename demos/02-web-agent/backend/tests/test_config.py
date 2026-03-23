@@ -39,7 +39,7 @@ class TestSettings:
         settings = TestSettings()
 
         assert settings.zhipuai_api_key == 'test-key'
-        assert settings.zhipuai_model == 'glm-4'
+        assert settings.zhipuai_model == 'glm-5'
         assert settings.app_name == 'Web Agent Demo'
         assert settings.app_version == '0.1.0'
         assert settings.log_level == 'INFO'

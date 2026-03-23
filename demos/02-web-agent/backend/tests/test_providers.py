@@ -50,7 +50,7 @@ class TestZhipuClient:
         with patch("httpx.AsyncClient.post", mock_post):
             client = ZhipuClient("test-api-key")
             response = await client.chat(
-                model="glm-4",
+                model="glm-5",
                 messages=[ChatMessage(role="user", content="你好")],
                 stream=False
             )
@@ -92,7 +92,7 @@ class TestZhipuClient:
         with patch("httpx.AsyncClient.post", mock_post):
             client = ZhipuClient("test-api-key")
             response = await client.chat(
-                model="glm-4",
+                model="glm-5",
                 messages=[ChatMessage(role="user", content="计算1+1")],
                 tools=[],
                 stream=False
@@ -117,7 +117,7 @@ class TestZhipuClient:
             client = ZhipuClient("test-api-key")
             with pytest.raises(Exception) as exc_info:
                 await client.chat(
-                    model="glm-4",
+                    model="glm-5",
                     messages=[ChatMessage(role="user", content="你好")],
                     stream=False
                 )
@@ -161,7 +161,7 @@ class TestZhipuClient:
             client = ZhipuClient("test-api-key")
             tokens = []
             async for token in client.chat_stream(
-                model="glm-4",
+                model="glm-5",
                 messages=[ChatMessage(role="user", content="你好")],
             ):
                 tokens.append(token)

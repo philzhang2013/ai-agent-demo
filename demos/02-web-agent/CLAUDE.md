@@ -144,7 +144,7 @@ frontend/src/
 # LLM 提供商
 ZHIPUAI_API_KEY=your_api_key_here
 ZHIPUAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-ZHIPUAI_MODEL=glm-4
+ZHIPUAI_MODEL=glm-5
 
 # 数据库（PostgreSQL）
 DATABASE_URL=postgresql://user:password@host:5432/dbname

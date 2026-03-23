@@ -151,7 +151,7 @@ python3 -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # 安装依赖
-pip install -r requirements.txt
+pip install -e .
 
 # 配置环境变量
 cp .env.example .env
@@ -191,8 +191,8 @@ npm run dev
 ```bash
 # 智谱 AI 配置
 ZHIPUAI_API_KEY=your_api_key_here
-ZHIPUAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-ZHIPUAI_MODEL=glm-4
+ZHIPUAI_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4
+ZHIPUAI_MODEL=glm-5
 
 # 数据库配置
 DATABASE_URL=postgresql://user:password@host:5432/dbname

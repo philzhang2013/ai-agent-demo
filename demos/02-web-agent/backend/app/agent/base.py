@@ -23,7 +23,7 @@ class Agent:
         self,
         provider: str = "zhipuai",
         api_key: str = "",
-        model: str = "glm-4",
+        model: str = "glm-5",
         max_iterations: int = 5
     ):
         self.provider = provider
