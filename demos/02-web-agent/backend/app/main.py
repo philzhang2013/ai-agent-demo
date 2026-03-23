@@ -12,11 +12,19 @@ from app.api.auth import router as auth_router
 from app.api.sessions import router as sessions_router
 from app.db.connection import close_pool
 
-# 创建日志记录器
-logger = logging.getLogger(__name__)
-
 # 创建 FastAPI 应用
 settings = get_settings()
+
+# 配置日志输出
+log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+logging.basicConfig(
+    level=log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# 创建日志记录器
+logger = logging.getLogger(__name__)
 logger.info(f"[应用启动] {settings.app_name} v{settings.app_version}")
 logger.info(f"[配置] LLM提供商=zhipuai, 模型={settings.zhipuai_model}, 最大迭代={settings.max_iterations}")
 
