@@ -104,6 +104,10 @@ AI Agent 学习项目，系统性学习和实践 AI Agent 开发。
 
 遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范。
 
+📖 [Git 提交规范详细指南](./docs/git-commit-convention.md)
+
+**快速参考**：
+
 **格式**：`<type>: <description>`
 
 **Type**：`feat` · `fix` · `refactor` · `docs` · `test` · `chore`
@@ -112,13 +116,9 @@ AI Agent 学习项目，系统性学习和实践 AI Agent 开发。
 ```
 feat: 添加用户认证功能
 fix: 修复聊天消息未保存
-docs: 更新 API 文档
-test: 添加登录测试
 ```
 
 **推送前确认**：⚠️ **必须征得用户（爸爸）确认**
-
-📖 [Git 命令参考](./docs/git-commands.md)
 
 ---
 
@@ -130,4 +130,4 @@ test: 添加登录测试
 | [测试类型和规范](./docs/testing-guide.md) | 单元/集成/E2E | 编写测试时 |
 | [Code Review 指南](./docs/code-review.md) | Review 流程和标准 | 审查代码时 |
 | [技术约定和代码规范](./docs/coding-standards.md) | 代码组织和命名 | 编码时参考 |
-| [Git 命令参考](./docs/git-commands.md) | Git 常用命令 | Git 操作时 |
+| [Git 提交规范](./docs/git-commit-convention.md) | Conventional Commits | 提交代码时 |
