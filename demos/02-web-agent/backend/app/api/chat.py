@@ -68,21 +68,55 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
 
     async def event_generator():
         """生成 SSE 事件"""
-        token_count = 0
+        event_count = 0
         try:
             # 使用 Agent 的流式处理方法
-            async for token in agent.process_message_stream(request.message):
-                token_count += 1
-                yield {
-                    "event": "token",
-                    "data": json.dumps({"content": token})
-                }
+            async for event in agent.process_message_stream(request.message):
+                event_count += 1
+
+                # 根据事件类型发送不同的 SSE 事件
+                if event["event"] == "reasoning":
+                    yield {
+                        "event": "reasoning",
+                        "data": json.dumps({"content": event["content"]}, ensure_ascii=False)
+                    }
+                elif event["event"] == "content":
+                    yield {
+                        "event": "token",
+                        "data": json.dumps({"content": event["content"]}, ensure_ascii=False)
+                    }
+                elif event["event"] == "tool_call":
+                    # 工具调用事件
+                    yield {
+                        "event": "tool_call",
+                        "data": json.dumps({
+                            "tool_calls": event["tool_calls"]
+                        }, ensure_ascii=False)
+                    }
+                elif event["event"] == "tool_result":
+                    # 工具结果事件
+                    yield {
+                        "event": "tool_result",
+                        "data": json.dumps({
+                            "tool": event["tool"],
+                            "result": event["result"]
+                        }, ensure_ascii=False)
+                    }
+                elif event["event"] == "tool_error":
+                    # 工具错误事件
+                    yield {
+                        "event": "tool_error",
+                        "data": json.dumps({
+                            "tool": event["tool"],
+                            "error": event["error"]
+                        }, ensure_ascii=False)
+                    }
 
             # 发送完成事件
-            logger.info(f"[POST /api/chat/stream] 流式完成, session_id={session_id}, tokens={token_count}")
+            logger.info(f"[POST /api/chat/stream] 流式完成, session_id={session_id}, events={event_count}")
             yield {
                 "event": "done",
-                "data": json.dumps({"session_id": session_id})
+                "data": json.dumps({"session_id": session_id}, ensure_ascii=False)
             }
 
         except Exception as e:
@@ -104,7 +138,7 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
             # 发送错误事件
             yield {
                 "event": "error",
-                "data": json.dumps({"error": friendly_error})
+                "data": json.dumps({"error": friendly_error}, ensure_ascii=False)
             }
 
     return EventSourceResponse(event_generator())

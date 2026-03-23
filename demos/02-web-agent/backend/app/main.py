@@ -16,12 +16,29 @@ from app.db.connection import close_pool
 settings = get_settings()
 
 # 配置日志输出
+import sys
+import io
+
+# 设置 stdout 和 stderr 的编码为 UTF-8
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
 logging.basicConfig(
     level=log_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
 )
+
+# 强制使用 UTF-8 编码
+for handler in logging.root.handlers:
+    handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    ))
 
 # 创建日志记录器
 logger = logging.getLogger(__name__)

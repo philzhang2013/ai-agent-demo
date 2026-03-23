@@ -3,11 +3,12 @@
 支持 Function Calling API 和流式输出
 """
 import json
+import logging
 import httpx
 from typing import List, Dict, Any, AsyncIterator
 
 from app.providers.base import LLMClient, ChatMessage, ChatResponse, ToolCall
-
+logger = logging.getLogger(__name__)
 
 class ZhipuClient(LLMClient):
     """智谱 AI 客户端"""
@@ -29,6 +30,7 @@ class ZhipuClient(LLMClient):
         # 转换消息格式
         request_messages = [self._convert_message(m) for m in messages]
 
+        logger.info(f"[智普 chat] request_messages: {request_messages}")
         # 构建请求体
         request_body = {
             "model": model,
@@ -102,12 +104,20 @@ class ZhipuClient(LLMClient):
         model: str,
         messages: List[ChatMessage],
         tools: List[Dict[str, Any]] | None = None
-    ) -> AsyncIterator[str]:
-        """发送流式聊天请求"""
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """
+        发送流式聊天请求
+
+        返回事件字典:
+        - {"event": "reasoning", "content": "..."} - 思维链内容
+        - {"event": "content", "content": "..."} - 普通内容
+        - {"event": "tool_call", "tool_calls": [...]} - 工具调用
+        """
         url = f"{self.base_url}/chat/completions"
 
         # 转换消息格式
         request_messages = [self._convert_message(m) for m in messages]
+        logger.info(f"[智普zhipu chat] request_messages: {json.dumps(request_messages, ensure_ascii=False)}")
 
         # 构建请求体
         request_body = {
@@ -116,8 +126,17 @@ class ZhipuClient(LLMClient):
             "stream": True
         }
 
+        # 启用思维链功能（仅 GLM-4.5+ 和 GLM-4.1V-Thinking 支持）
+        if model.startswith("glm-4.5") or "thinking" in model.lower():
+            request_body["thinking"] = {"type": "enabled"}
+
         if tools:
             request_body["tools"] = tools
+
+        logger.info(f"[智普zhipu chat_stream] request_body: {json.dumps(request_body, ensure_ascii=False, indent=2)}")
+
+        # 用于累积 tool_calls 数据
+        current_tool_calls: List[Dict[str, Any]] = []
 
         async with httpx.AsyncClient() as client:
             async with client.stream(
@@ -149,12 +168,57 @@ class ZhipuClient(LLMClient):
                         choices = data.get("choices", [])
                         if choices:
                             delta = choices[0].get("delta", {})
+                            finish_reason = choices[0].get("finish_reason", "")
 
-                            # GLM-5 使用 reasoning_content 字段
-                            # GLM-4 使用 content 字段
-                            content = delta.get("reasoning_content") or delta.get("content", "")
-                            if content:
-                                yield content
+                            # 检测 tool_calls（流式模式）
+                            if "tool_calls" in delta and delta["tool_calls"]:
+                                # 累积 tool_calls 数据
+                                for tc in delta["tool_calls"]:
+                                    index = tc.get("index", 0)
+                                    # 确保数组有足够空间
+                                    while len(current_tool_calls) <= index:
+                                        current_tool_calls.append({
+                                            "id": "",
+                                            "type": "function",
+                                            "function": {"name": "", "arguments": ""}
+                                        })
+
+                                    # 更新 tool_call 数据
+                                    if "id" in tc:
+                                        current_tool_calls[index]["id"] = tc["id"]
+                                    if "function" in tc:
+                                        func = tc["function"]
+                                        if "name" in func:
+                                            current_tool_calls[index]["function"]["name"] = func["name"]
+                                        if "arguments" in func:
+                                            # arguments 是逐步追加的
+                                            current_tool_calls[index]["function"]["arguments"] += func["arguments"]
+
+                            # 检测是否完成（finish_reason = tool_calls）
+                            if finish_reason == "tool_calls" and current_tool_calls:
+                                logger.info(f"[流式工具调用检测] tool_calls: {current_tool_calls}")
+                                yield {
+                                    "event": "tool_call",
+                                    "tool_calls": current_tool_calls
+                                }
+                                current_tool_calls = []
+
+                            # 处理普通内容（reasoning_content 和 content）
+                            # GLM-4.5+ 使用 reasoning_content 字段表示思维链
+                            # GLM-4 使用 content 字段表示普通内容
+                            reasoning_content = delta.get("reasoning_content", "")
+                            content = delta.get("content", "")
+
+                            if reasoning_content:
+                                yield {
+                                    "event": "reasoning",
+                                    "content": reasoning_content
+                                }
+                            elif content:
+                                yield {
+                                    "event": "content",
+                                    "content": content
+                                }
                     except (json.JSONDecodeError, KeyError):
                         continue
 

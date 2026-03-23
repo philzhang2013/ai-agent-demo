@@ -29,9 +29,22 @@
           </svg>
         </div>
         <div class="message-content">
+          <!-- 助手消息：显示思维链（如果有） -->
+          <div v-if="message.role === 'assistant' && message.reasoningContent" class="reasoning-section">
+            <div class="reasoning-header" @click="toggleReasoning(message.id)">
+              <span class="reasoning-label">💭 思考过程</span>
+              <span class="reasoning-toggle">{{ isReasoningExpanded(message.id) ? '▼' : '▶' }}</span>
+            </div>
+            <div v-show="isReasoningExpanded(message.id)" class="reasoning-content">
+              <MarkdownRenderer :content="message.reasoningContent" />
+            </div>
+          </div>
+
           <!-- 加载状态或有内容时显示 -->
           <div v-if="message.content || message.role === 'user'" class="message-text">
-            {{ message.content }}
+            <!-- 助手消息使用 Markdown 渲染，用户消息使用纯文本 -->
+            <MarkdownRenderer v-if="message.role === 'assistant'" :content="message.content" />
+            <span v-else>{{ message.content }}</span>
           </div>
           <!-- 空的助手消息显示加载动画 -->
           <div v-else class="message-text loading">
@@ -41,17 +54,41 @@
         </div>
       </div>
     </div>
+
+    <!-- 工具调用卡片（显示在最后一条助手消息之后） -->
+    <div v-if="currentToolCalls.length > 0" class="tool-calls-container">
+      <ToolCard
+        v-for="toolCall in currentToolCalls"
+        :key="toolCall.id"
+        :tool-call="toolCall"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import MarkdownRenderer from './MarkdownRenderer.vue'
+import ToolCard from './ToolCard.vue'
 
 const chatStore = useChatStore()
 
 const messages = computed(() => chatStore.messages)
 const isLoading = computed(() => chatStore.isLoading)
+const currentToolCalls = computed(() => chatStore.currentToolCalls)
+
+// 思维链展开/折叠状态管理（true = 折叠，false = 展开，默认展开）
+const collapsedReasonings = ref<Record<string, boolean>>({})
+
+function toggleReasoning(messageId: string) {
+  collapsedReasonings.value[messageId] = !collapsedReasonings.value[messageId]
+}
+
+function isReasoningExpanded(messageId: string): boolean {
+  // 默认展开（undefined 或 false 都表示展开）
+  return !collapsedReasonings.value[messageId]
+}
 
 function formatTime(date: Date): string {
   const now = new Date()
@@ -232,6 +269,72 @@ function formatTime(date: Date): string {
   40% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+/* 思维链样式 */
+.reasoning-section {
+  margin-bottom: 8px;
+}
+
+.reasoning-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.reasoning-header:hover {
+  background: #f3f4f6;
+}
+
+.reasoning-label {
+  font-size: 12px;
+  color: #6a737d;
+  font-weight: 500;
+}
+
+.reasoning-toggle {
+  font-size: 10px;
+  color: #6a737d;
+  transition: transform 0.2s;
+}
+
+.reasoning-content {
+  padding: 8px 12px;
+  margin-top: 4px;
+  background: #fafbfc;
+  border-left: 3px solid #d0d7de;
+  border-radius: 4px;
+  color: #6a737d;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.reasoning-content :deep(.markdown-renderer) {
+  color: #6a737d;
+  font-size: 0.9em;
+}
+
+/* 工具调用容器 */
+.tool-calls-container {
+  padding: 0 24px;
+  animation: toolCallsSlide 0.3s ease-out;
+}
+
+@keyframes toolCallsSlide {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>

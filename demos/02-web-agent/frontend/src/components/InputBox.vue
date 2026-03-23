@@ -9,7 +9,7 @@
           rows="1"
           @keydown="handleKeydown"
           @input="handleInput"
-          :disabled="isLoading"
+          :disabled="isLoading || isProcessingTool"
           ref="textareaRef"
         />
         <el-button
@@ -17,7 +17,7 @@
           :icon="Promotion"
           @click="handleSend"
           :loading="isLoading"
-          :disabled="!inputMessage.trim() || isLoading"
+          :disabled="!inputMessage.trim() || isLoading || isProcessingTool"
           class="send-button"
           circle
         />
@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import { Promotion } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useChatStore } from '@/stores/chat'
@@ -41,6 +41,9 @@ const chatStore = useChatStore()
 const inputMessage = ref('')
 const textareaRef = ref<HTMLTextAreaElement>()
 const isStreaming = ref(false)
+
+// 工具处理状态
+const isProcessingTool = computed(() => chatStore.isProcessingTool)
 
 // 自动调整 textarea 高度
 function handleInput() {
@@ -92,17 +95,67 @@ async function handleSend() {
       message,
       (event) => {
         switch (event.type) {
+          case 'reasoning':
+            // 收到思维链内容，更新 reasoningBuffer
+            if (event.content) {
+              chatStore.appendToReasoningBuffer(event.content)
+              chatStore.updateLastAssistantReasoning(chatStore.reasoningBuffer)
+            }
+            break
+
           case 'token':
-            // 收到 token，实时更新
+            // 收到普通内容，实时更新
             if (event.content) {
               tempContent += event.content
               chatStore.updateLastAssistantMessage(tempContent)
             }
             break
 
+          case 'tool_call':
+            // 收到工具调用
+            if (event.tool_calls) {
+              event.tool_calls.forEach(tc => {
+                chatStore.addToolCall({
+                  id: tc.id,
+                  tool: tc.function.name,
+                  args: JSON.parse(tc.function.arguments),
+                  status: 'executing'
+                })
+              })
+            }
+            break
+
+          case 'tool_result':
+            // 收到工具结果
+            if (event.tool && event.result !== undefined) {
+              // 找到对应的工具调用并更新
+              const toolCall = chatStore.currentToolCalls.find(tc => tc.tool === event.tool)
+              if (toolCall) {
+                chatStore.updateToolCall(toolCall.id, {
+                  status: 'success',
+                  result: event.result
+                })
+              }
+            }
+            break
+
+          case 'tool_error':
+            // 收到工具错误
+            if (event.tool && event.error) {
+              const toolCall = chatStore.currentToolCalls.find(tc => tc.tool === event.tool)
+              if (toolCall) {
+                chatStore.updateToolCall(toolCall.id, {
+                  status: 'error',
+                  error: event.error
+                })
+              }
+            }
+            break
+
           case 'done':
             // 完成
             isStreaming.value = false
+            chatStore.clearToolCalls()
             if (event.session_id) {
               chatStore.setSessionId(event.session_id)
             }
@@ -112,10 +165,11 @@ async function handleSend() {
           case 'error':
             // 错误
             isStreaming.value = false
+            chatStore.clearToolCalls()
             ElMessage.error(event.error || '发送失败')
             chatStore.setLoading(false)
             // 移除空消息
-            if (tempContent === '') {
+            if (tempContent === '' && chatStore.reasoningBuffer === '') {
               chatStore.removeLastMessage()
             }
             break
@@ -125,6 +179,7 @@ async function handleSend() {
     )
   } catch (error) {
     isStreaming.value = false
+    chatStore.clearToolCalls()
     ElMessage.error('发送失败，请稍后重试')
     chatStore.setLoading(false)
   }
