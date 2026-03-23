@@ -47,17 +47,12 @@ Demo 4: 自动化工具 Agent    →  实现工具调用 + 自主决策
 
 ```bash
 # 步骤 1: RED - 编写失败的测试
-# 描述预期行为，此时测试应该失败
-
 # 步骤 2: GREEN - 编写最小实现
-# 只写刚好能让测试通过的代码
-
 # 步骤 3: REFACTOR - 重构优化
-# 在保持测试通过的前提下优化代码
-
 # 步骤 4: VERIFY - 验证所有测试
-# 运行完整测试套件，确保没有破坏现有功能
 ```
+
+📖 **详细教程**：[TDD 工作流详解](./docs/tdd-workflow.md)
 
 ### 规则 2: 测试通过后才能报告
 
@@ -79,14 +74,10 @@ Demo 4: 自动化工具 Agent    →  实现工具调用 + 自主决策
 所有代码必须达到 80% 以上的测试覆盖率。
 
 ```bash
-# 检查覆盖率
 npm run test:coverage
-
-# 输出示例（必须 ≥ 80%）：
-# Files  2 passed (2)
-# Tests  42 passed (42)
-# Coverage  85.3%  (目标: ≥ 80%)
 ```
+
+📖 **测试类型规范**：[测试类型和规范](./docs/testing-guide.md)
 
 ---
 
@@ -111,170 +102,17 @@ npm run test:coverage
 
 ---
 
-## TDD 工作流详解
-
-### 1. RED 阶段 - 编写测试
-
-```typescript
-// tests/calculator.test.ts
-
-import { describe, it, expect } from 'vitest';
-import { calculatorTool } from '../src/tools.js';
-
-describe('calculatorTool', () => {
-  it('应该正确执行加法运算', async () => {
-    // Arrange: 准备测试数据
-    const input = { expression: '18 + 25' };
-
-    // Act: 执行被测试的功能
-    const result = await calculatorTool.execute(input);
-
-    // Assert: 验证结果
-    expect(result).toBe('计算结果: 18 + 25 = 43');
-  });
-});
-```
-
-**运行测试，确认失败（RED）：**
-```bash
-npm test
-
-# 预期输出：
-# ❌ tests/calculator.test.ts > calculatorTool > 应该正确执行加法运算
-# Error: calculatorTool is not defined...
-```
-
-### 2. GREEN 阶段 - 编写实现
-
-```typescript
-// src/tools.ts
-
-export const calculatorTool: Tool = {
-  name: 'calculator',
-  description: '执行数学计算',
-
-  execute: (args) => {
-    const expression = args.expression.trim();
-    const result = Function('"use strict"; return (' + expression + ')')();
-    return `计算结果: ${expression} = ${result}`;
-  }
-};
-```
-
-**运行测试，确认通过（GREEN）：**
-```bash
-npm test
-
-# 预期输出：
-# ✅ tests/calculator.test.ts > calculatorTool > 应该正确执行加法运算
-```
-
-### 3. REFACTOR 阶段 - 优化代码
-
-在保持测试通过的前提下优化代码：
-
-```typescript
-// 添加错误处理
-export const calculatorTool: Tool = {
-  // ...
-  execute: (args) => {
-    try {
-      const expression = args.expression.trim();
-      const result = Function('"use strict"; return (' + expression + ')')();
-      return `计算结果: ${expression} = ${result}`;
-    } catch (error) {
-      return `计算错误: ${error}`;
-    }
-  }
-};
-```
-
-**运行测试，确保仍然通过：**
-```bash
-npm test
-
-# 预期输出：所有测试 ✅
-```
-
-### 4. VERIFY 阶段 - 完整验证
-
-```bash
-# 1. 运行所有测试
-npm test
-
-# 2. 检查覆盖率
-npm run test:coverage
-
-# 3. 确认结果
-# ✅ Tests  42 passed (42)
-# ✅ Coverage  85.3%
-```
-
----
-
-## 测试类型要求
-
-### 单元测试 (Unit Tests)
-
-**MANDATORY** - 每个函数/类都需要单元测试：
-
-```typescript
-describe('工具函数', () => {
-  describe('calculator', () => {
-    it('应该执行加法', async () => { /* ... */ });
-    it('应该执行减法', async () => { /* ... */ });
-    it('应该处理错误输入', async () => { /* ... */ });
-  });
-});
-```
-
-### 集成测试 (Integration Tests)
-
-测试多个组件协作：
-
-```typescript
-describe('Agent 集成测试', () => {
-  it('应该完成完整的工具调用流程', async () => {
-    const agent = new Agent({ mockMode: true });
-    const response = await agent.processUserInput('计算 18 + 25');
-    expect(response).toContain('43');
-  });
-});
-```
-
-### E2E 测试 (End-to-End Tests)
-
-测试关键用户流程：
-
-```typescript
-describe('用户流程', () => {
-  it('应该处理天气查询', async () => { /* ... */ });
-  it('应该处理连续对话', async () => { /* ... */ });
-});
-```
-
----
-
 ## 技术约定
 
-### 代码组织
+📖 **详细规范**：[技术约定和代码规范](./docs/coding-standards.md)
+
+### 核心原则
 
 - **小文件优先** - 单文件 200-400 行，最多 800 行
 - **高内聚低耦合** - 按功能/领域组织
 - **类型安全** - TypeScript 严格模式
-
-### 错误处理
-
-- **显式处理** - 每层都处理错误
-- **友好提示** - UI 面向用户的友好消息
-- **详细日志** - 服务端记录详细上下文
-- **永不吞没** - 不静默忽略错误
-
-### 不可变性 (CRITICAL)
-
-- **创建新对象，不修改原对象**
-- 防止隐藏副作用
-- 便于调试和并发
+- **显式错误处理** - 每层都处理错误
+- **不可变性** - 创建新对象，不修改原对象
 
 ---
 
@@ -284,21 +122,16 @@ describe('用户流程', () => {
 ai-agent-demo/
 ├── CLAUDE.md              # 项目配置（本文件）
 ├── README.md              # 项目说明
-├── demos/
-│   ├── 01-cli-agent/      # 命令行 Agent
-│   │   ├── src/
-│   │   │   ├── index.ts   # 主程序入口
-│   │   │   ├── types.ts   # 类型定义
-│   │   │   ├── tools.ts   # 工具函数
-│   │   │   ├── agent.ts   # Agent 类
-│   │   │   └── logger.ts  # 日志工具
-│   │   ├── tests/         # 测试文件
-│   │   ├── package.json
-│   │   └── vitest.config.ts
-│   ├── 02-web-agent/      # Web 应用 Agent
-│   ├── 03-chatbot/        # 聊天机器人
-│   └── 04-automation/     # 自动化工具 Agent
-└── docs/                  # 学习笔记
+├── docs/                  # 📖 详细文档
+│   ├── tdd-workflow.md    # TDD 工作流详解
+│   ├── testing-guide.md   # 测试类型和规范
+│   ├── coding-standards.md # 技术约定和代码规范
+│   └── git-commands.md    # Git 常用命令
+└── demos/
+    ├── 01-cli-agent/      # 命令行 Agent
+    ├── 02-web-agent/      # Web 应用 Agent
+    ├── 03-chatbot/        # 聊天机器人
+    └── 04-automation/     # 自动化工具 Agent
 ```
 
 ---
@@ -336,7 +169,7 @@ npm start                # 运行编译后的代码
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ```
 
-### Type 类型（必选）
+### Type 类型
 
 | Type | 说明 | 示例 |
 |------|------|------|
@@ -346,124 +179,33 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 | `docs` | 文档更新 | `docs: 更新 README 安装说明` |
 | `test` | 测试相关 | `test: 添加用户登录测试` |
 | `chore` | 构建/工具链 | `chore: 更新依赖版本` |
-| `perf` | 性能优化 | `perf: 优化数据库查询` |
-| `ci` | CI 配置 | `ci: 添加 GitHub Actions` |
 
-### Description 描述（必选）
+### Description 描述
 
 - 使用中文
-- 简洁明了，说明"做了什么"而非"怎么做的"
+- 简洁明了，说明"做了什么"
 - 首字母小写
 - 不超过 50 个字符
 - 结尾不加句号
-
-```
-✅ 好的示例：
-feat: 添加用户注册功能
-fix: 修复 Token 过期问题
-docs: 更新 API 文档
-
-❌ 不好的示例：
-Feat: Adding User Registration Function  # 首字母大写、英文
-feat: 添加用户注册功能。                    # 结尾有句号
-feat: 我修改了 UserController 的 register 方法来实现用户注册功能  # 太冗长
-```
-
-### Body 正文（可选）
-
-详细描述修改内容，可以分点说明：
-
-```
-feat: 添加用户注册功能
-
-- 添加用户名和密码验证
-- 使用 bcrypt 加密密码
-- 返回 JWT Token
-- 添加单元测试，覆盖率 85%
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
-```
-
-### Co-Authored-By（可选）
-
-当 Claude Code 参与代码编写时，添加：
-
-```
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
-```
-
-### 提交示例
-
-```bash
-# 新功能
-git commit -m "feat: 添加流式聊天功能
-
-- 实现 SSE 流式输出
-- 支持多轮对话
-- 添加断线重连
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
-
-# 修复 Bug
-git commit -m "fix: 修复数据库连接泄漏问题"
-
-# 文档更新
-git commit -m "docs: 添加环境配置说明"
-
-# 重构
-git commit -m "refactor: 将 Agent 类拆分为多个模块"
-
-# 测试
-git commit -m "test: 添加用户认证集成测试"
-```
 
 ### 推送到远端
 
 ⚠️ **MANDATORY**：推送代码到远端仓库前，**必须征得用户（爸爸）确认**。
 
-```bash
-# 1. 本地提交
-git add .
-git commit -m "feat: 添加新功能"
+📖 **Git 常用命令**：[Git 命令参考](./docs/git-commands.md)
 
-# 2. 询问用户
-# "代码已提交到本地，是否推送到远端？"
+---
 
-# 3. 用户确认后再推送
-git push
-```
+## 延迟加载文档
 
-**禁止行为**：
-- ❌ 未经用户确认直接 `git push`
-- ❌ 跳过用户确认就推送代码
+以下文档按需加载，减少主配置文件大小：
 
-**正确流程**：
-1. 完成代码修改和测试
-2. 提交到本地仓库
-3. **询问用户是否推送**
-4. 用户确认后才执行 `git push`
-
-### 常用命令
-
-```bash
-# 查看提交历史
-git log --oneline -10
-
-# 查看最近一次提交
-git show HEAD
-
-# 撤销最后一次提交（保留修改）
-git reset --soft HEAD~1
-
-# 修改最后一次提交信息
-git commit --amend
-
-# 查看状态
-git status
-
-# 查看差异
-git diff
-```
+| 文档 | 说明 | 何时阅读 |
+|------|------|----------|
+| [TDD 工作流详解](./docs/tdd-workflow.md) | RED-GREEN-REFACTOR 详细流程 | 学习 TDD 或遇到测试问题时 |
+| [测试类型和规范](./docs/testing-guide.md) | 单元/集成/E2E 测试规范 | 编写测试时参考 |
+| [技术约定和代码规范](./docs/coding-standards.md) | 代码组织和命名规范 | 编码时参考 |
+| [Git 命令参考](./docs/git-commands.md) | Git 常用命令速查 | 需要 Git 操作时查询 |
 
 ---
 
