@@ -1,0 +1,485 @@
+openapi: 3.0.3
+info:
+  title: Web Agent Demo API
+  description: |
+    Web 应用 AI Agent API 文档
+
+    ## 功能特性
+    - **用户认证**：基于 JWT 的用户注册和登录
+    - **流式对话**：SSE (Server-Sent Events) 实时流式输出
+    - **工具调用**：集成计算器和天气查询工具
+    - **会话管理**：支持多会话和历史记录查询
+
+    ## 认证方式
+    大部分端点需要 JWT Token 认证。在请求头中添加：
+    ```
+    Authorization: Bearer <your_token>
+    ```
+
+  version: 0.1.0
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8000
+    description: 本地开发服务器
+  - url: https://api.example.com
+    description: 生产服务器
+
+tags:
+  - name: health
+    description: 健康检查
+  - name: auth
+    description: 用户认证
+  - name: chat
+    description: 聊天功能
+  - name: sessions
+    description: 会话管理
+
+paths:
+  /api/health:
+    get:
+      tags:
+        - health
+      summary: 健康检查
+      description: 检查 API 服务是否正常运行
+      operationId: checkHealth
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+                service: web-agent-demo
+
+  /api/auth/register:
+    post:
+      tags:
+        - auth
+      summary: 用户注册
+      description: 创建新用户账号
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              username: testuser
+              password: password123
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: 用户名已存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: 用户名已存在
+
+  /api/auth/login:
+    post:
+      tags:
+        - auth
+      summary: 用户登录
+      description: 使用用户名和密码登录
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              username: testuser
+              password: password123
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: 用户名或密码错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: 用户名或密码错误
+
+  /api/auth/me:
+    get:
+      tags:
+        - auth
+      summary: 获取当前用户
+      description: 获取当前登录用户的信息（需要认证）
+      operationId: getCurrentUser
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 成功返回用户信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: 未提供认证凭据
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: 未提供认证凭据
+
+  /api/chat/stream:
+    post:
+      tags:
+        - chat
+      summary: 发送消息（SSE 流式）
+      description: |
+        发送聊天消息并接收 AI 的流式响应。
+
+        使用 SSE (Server-Sent Events) 实现实时流式输出。
+        客户端需要处理以下事件类型：
+        - `token`: 单个文本 token
+        - `tool_call`: 工具调用
+        - `tool_result`: 工具执行结果
+        - `done`: 响应完成
+        - `error`: 错误信息
+      operationId: chatStream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            example:
+              message: "计算 18 + 25"
+              session_id: "optional-session-id"
+      responses:
+        '200':
+          description: SSE 事件流
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE 事件流
+              example: |
+                event: token
+                data: {"content": "计"}
+
+                event: token
+                data: {"content": "算"}
+
+                event: tool_call
+                data: {"tool": "calculator", "args": {"expression": "18+25"}}
+
+                event: tool_result
+                data: {"content": "计算结果: 43"}
+
+                event: done
+                data: {"session_id": "session-uuid"}
+
+  /api/sessions:
+    get:
+      tags:
+        - sessions
+      summary: 获取会话列表
+      description: 获取当前用户的所有会话（需要认证）
+      operationId: getSessions
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 成功返回会话列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+        '401':
+          description: 未提供认证凭据
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/sessions/{session_id}:
+    get:
+      tags:
+        - sessions
+      summary: 获取会话详情
+      description: 获取指定会话的详细信息和消息历史（需要认证）
+      operationId: getSession
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 会话 ID
+      responses:
+        '200':
+          description: 成功返回会话详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDetail'
+        '401':
+          description: 未提供认证凭据
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权访问此会话
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 会话不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - sessions
+      summary: 删除会话
+      description: 删除指定会话及其所有消息（需要认证）
+      operationId: deleteSession
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 会话 ID
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+        '401':
+          description: 未提供认证凭据
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 无权删除此会话
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 会话不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Token 认证
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: web-agent-demo
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 用户 ID
+        username:
+          type: string
+          description: 用户名
+        created_at:
+          type: string
+          format: date-time
+          description: 创建时间
+
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          description: 用户名（3-50 个字符）
+        password:
+          type: string
+          minLength: 6
+          maxLength: 100
+          description: 密码（至少 6 个字符）
+
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: 用户名
+        password:
+          type: string
+          description: 密码
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        token:
+          type: string
+          description: JWT Token
+
+    ChatRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: 用户消息内容
+          minLength: 1
+          maxLength: 5000
+        session_id:
+          type: string
+          format: uuid
+          description: 会话 ID（可选，用于多轮对话）
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 会话 ID
+        user_id:
+          type: string
+          format: uuid
+          description: 用户 ID
+        created_at:
+          type: string
+          format: date-time
+          description: 创建时间
+        updated_at:
+          type: string
+          format: date-time
+          description: 更新时间
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+          description: 消息列表（仅在获取详情时包含）
+
+    SessionDetail:
+      allOf:
+        - $ref: '#/components/schemas/Session'
+        - type: object
+          properties:
+            messages:
+              type: array
+              items:
+                $ref: '#/components/schemas/Message'
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 消息 ID
+        role:
+          type: string
+          enum: [user, assistant, system]
+          description: 消息角色
+        content:
+          type: string
+          description: 消息内容
+        timestamp:
+          type: string
+          format: date-time
+          description: 时间戳
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCall'
+          description: 工具调用列表（可选）
+
+    ToolCall:
+      type: object
+      properties:
+        id:
+          type: string
+          description: 工具调用 ID
+        name:
+          type: string
+          description: 工具名称
+        arguments:
+          type: object
+          description: 工具参数
+        result:
+          type: string
+          description: 工具执行结果（可选）
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: 错误详情
+          example: 用户名或密码错误
