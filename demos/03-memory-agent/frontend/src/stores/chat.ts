@@ -5,7 +5,7 @@ import type { ChatMessage, ToolCall } from '@/api/types'
 export const useChatStore = defineStore('chat', () => {
   const messages = ref<ChatMessage[]>([])
   const isLoading = ref(false)
-  const sessionId = ref<string | null>(null)
+  const sessionId = ref<string | null>(null)  // 由 sessionStore 管理当前会话 ID
   const reasoningBuffer = ref<string>('')  // 思维链缓冲区
   const currentToolCalls = ref<ToolCall[]>([])  // 当前正在执行的工具调用
   const isProcessingTool = ref(false)  // 是否正在处理工具
