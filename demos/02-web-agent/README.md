@@ -19,23 +19,27 @@
 ## ✨ 功能特性
 
 ### 🔐 用户认证
+
 - 用户注册和登录（用户名 + 密码）
 - JWT Token 认证
 - 路由守卫保护
 - 自动登录状态保持
 
 ### 💬 实时聊天
+
 - SSE (Server-Sent Events) 流式输出
 - 多轮对话支持
 - 消息历史记录
 - 逐字显示效果
 
 ### 🛠️ 工具调用
+
 - 计算器工具 - 数学计算
 - 天气查询工具 - 模拟天气信息
 - 可扩展的工具系统
 
 ### 📊 会话管理
+
 - 会话历史持久化
 - 用户数据隔离
 - 会话列表查看
@@ -46,6 +50,7 @@
 ## 🛠️ 技术栈
 
 ### 后端
+
 - **Python 3.10+** - 主要编程语言
 - **FastAPI** - Web 框架
 - **asyncpg** - 异步 PostgreSQL 驱动
@@ -55,6 +60,7 @@
 - **sse-starlette** - SSE 支持
 
 ### 前端
+
 - **Vue 3** - 前端框架
 - **TypeScript** - 类型安全
 - **Vite** - 构建工具
@@ -63,9 +69,11 @@
 - **Vue Router** - 路由管理
 
 ### 数据库
+
 - **Supabase PostgreSQL** - 云数据库
 
 ### 测试
+
 - **pytest** - 后端单元测试
 - **Playwright** - E2E 测试
 - **Vitest** - 前端单元测试
@@ -162,6 +170,9 @@ psql $DATABASE_URL < migrations/001_initial_schema.sql
 
 # 启动后端服务
 uvicorn app.main:app --reload --port 8000
+
+# 关闭服务
+pkill -f uvicorn
 ```
 
 ### 3. 前端设置
@@ -178,9 +189,9 @@ npm run dev
 
 ### 4. 访问应用
 
-- 前端：http://localhost:5173
-- 后端 API：http://localhost:8000
-- API 文档：http://localhost:8000/docs
+- 前端：[http://localhost:5173](http://localhost:5173)
+- 后端 API：[http://localhost:8000](http://localhost:8000)
+- API 文档：[http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 
@@ -299,6 +310,7 @@ npx playwright test --ui
 ```
 
 **当前测试状态**：
+
 - 后端单元测试：✅ 部分通过
 - E2E 测试：⚠️ 4/21 通过
 
@@ -308,16 +320,18 @@ npx playwright test --ui
 
 ### RESTful API
 
-| 方法 | 端点 | 描述 | 认证 |
-|------|------|------|------|
-| GET | `/api/health` | 健康检查 | ❌ |
-| POST | `/api/auth/register` | 用户注册 | ❌ |
-| POST | `/api/auth/login` | 用户登录 | ❌ |
-| GET | `/api/auth/me` | 获取当前用户 | ✅ |
-| POST | `/api/chat/stream` | 发送消息（SSE） | ❌ |
-| GET | `/api/sessions` | 获取会话列表 | ✅ |
-| GET | `/api/sessions/{id}` | 获取会话详情 | ✅ |
-| DELETE | `/api/sessions/{id}` | 删除会话 | ✅ |
+
+| 方法     | 端点                   | 描述        | 认证  |
+| ------ | -------------------- | --------- | --- |
+| GET    | `/api/health`        | 健康检查      | ❌   |
+| POST   | `/api/auth/register` | 用户注册      | ❌   |
+| POST   | `/api/auth/login`    | 用户登录      | ❌   |
+| GET    | `/api/auth/me`       | 获取当前用户    | ✅   |
+| POST   | `/api/chat/stream`   | 发送消息（SSE） | ❌   |
+| GET    | `/api/sessions`      | 获取会话列表    | ✅   |
+| GET    | `/api/sessions/{id}` | 获取会话详情    | ✅   |
+| DELETE | `/api/sessions/{id}` | 删除会话      | ✅   |
+
 
 ### SSE 事件流
 
@@ -338,7 +352,94 @@ event: done
 data: {"session_id": "uuid"}
 ```
 
-详细 API 文档请访问：http://localhost:8000/docs
+### 非流式聊天端点
+
+| 方法 | 端点 | 描述 | 认证 |
+|------|------|------|------|
+| POST | `/api/chat` | 发送消息（非流式） | ❌ |
+
+详细 API 文档请访问：[http://localhost:8000/docs](http://localhost:8000/docs)
+
+---
+
+## 🔧 扩展指南
+
+### 添加新的 LLM 提供商
+
+1. 在 `backend/app/providers/` 创建新文件（如 `openai.py`）
+2. 继承 `LLMClient` 基类，实现 `chat()` 和 `chat_stream()` 方法
+3. 在 `agent/base.py` 的 `create_llm_client()` 中添加条件分支
+
+```python
+# backend/app/providers/openai.py
+from .base import LLMClient
+
+class OpenAIClient(LLMClient):
+    def __init__(self, api_key: str, model: str):
+        self.api_key = api_key
+        self.model = model
+
+    def chat(self, messages: list, tools: list = None) -> dict:
+        # 实现同步聊天
+        pass
+
+    def chat_stream(self, messages: list, tools: list = None):
+        # 实现流式聊天
+        pass
+```
+
+### 添加新工具
+
+1. 在 `backend/app/agent/tools.py` 定义工具函数
+2. 创建 `Tool` 实例并添加到 `tools` 列表
+3. 工具自动注册到 Agent 的 Function Calling 定义中
+
+```python
+# backend/app/agent/tools.py
+from .base import Tool
+
+def my_new_tool(param: str) -> str:
+    """工具描述"""
+    return f"结果: {param}"
+
+# 添加到 tools 列表
+tools.append(Tool(
+    name="my_new_tool",
+    description="工具描述",
+    func=my_new_tool,
+    parameters={
+        "type": "object",
+        "properties": {
+            "param": {"type": "string", "description": "参数描述"}
+        },
+        "required": ["param"]
+    }
+))
+```
+
+### 添加新的 API 端点
+
+1. 在 `backend/app/api/` 创建新文件（如 `users.py`）
+2. 定义路由和处理器函数
+3. 在 `backend/app/main.py` 中注册路由
+
+```python
+# backend/app/api/users.py
+from fastapi import APIRouter, Depends
+from ..auth.dependencies import get_current_user
+
+router = APIRouter(prefix="/api/users", tags=["users"])
+
+@router.get("/profile")
+async def get_profile(current_user = Depends(get_current_user)):
+    return {"username": current_user.username}
+```
+
+```python
+# backend/app/main.py
+from .api.users import router as users_router
+app.include_router(users_router)
+```
 
 ---
 
@@ -360,6 +461,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 **生产环境推荐参数**：
+
 - `--host 0.0.0.0`：监听所有网络接口
 - `--port 8000`：指定端口
 - `--workers 4`：多 worker 进程（根据 CPU 核心数调整）
