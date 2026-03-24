@@ -29,11 +29,13 @@ class Session:
         self,
         id: str,
         user_id: str,
+        title: str,
         created_at: datetime,
         updated_at: datetime
     ):
         self.id = id
         self.user_id = user_id
+        self.title = title
         self.created_at = created_at
         self.updated_at = updated_at
 
@@ -55,6 +57,23 @@ class Message:
         self.content = content
         self.created_at = created_at
         self.tool_calls = tool_calls
+
+
+class SessionPreview:
+    """会话预览模型（用于列表显示）"""
+    def __init__(
+        self,
+        id: str,
+        title: str,
+        last_message: str,
+        message_count: int,
+        updated_at: datetime
+    ):
+        self.id = id
+        self.title = title
+        self.last_message = last_message
+        self.message_count = message_count
+        self.updated_at = updated_at
 
 
 class UserRepository:
@@ -130,22 +149,23 @@ class UserRepository:
 class SessionRepository:
     """会话仓储"""
 
-    async def create(self, user_id: str) -> Session:
+    async def create(self, user_id: str, title: str = "新对话") -> Session:
         """创建会话"""
         pool = await get_pool()
         async with pool.acquire() as conn:
             record = await conn.fetchrow(
                 """
-                INSERT INTO sessions (user_id)
-                VALUES ($1)
-                RETURNING id, user_id, created_at, updated_at
+                INSERT INTO sessions (user_id, title)
+                VALUES ($1, $2)
+                RETURNING id, user_id, title, created_at, updated_at
                 """,
-                user_id
+                user_id, title
             )
 
             return Session(
                 id=str(record['id']),
                 user_id=str(record['user_id']),
+                title=record['title'],
                 created_at=record['created_at'],
                 updated_at=record['updated_at']
             )
@@ -156,7 +176,7 @@ class SessionRepository:
         async with pool.acquire() as conn:
             record = await conn.fetchrow(
                 """
-                SELECT id, user_id, created_at, updated_at
+                SELECT id, user_id, title, created_at, updated_at
                 FROM sessions
                 WHERE id = $1
                 """,
@@ -169,6 +189,7 @@ class SessionRepository:
             return Session(
                 id=str(record['id']),
                 user_id=str(record['user_id']),
+                title=record['title'],
                 created_at=record['created_at'],
                 updated_at=record['updated_at']
             )
@@ -179,7 +200,7 @@ class SessionRepository:
         async with pool.acquire() as conn:
             records = await conn.fetch(
                 """
-                SELECT id, user_id, created_at, updated_at
+                SELECT id, user_id, title, created_at, updated_at
                 FROM sessions
                 WHERE user_id = $1
                 ORDER BY updated_at DESC
@@ -191,6 +212,7 @@ class SessionRepository:
                 Session(
                     id=str(record['id']),
                     user_id=str(record['user_id']),
+                    title=record['title'],
                     created_at=record['created_at'],
                     updated_at=record['updated_at']
                 )
@@ -206,7 +228,7 @@ class SessionRepository:
                 UPDATE sessions
                 SET updated_at = NOW()
                 WHERE id = $1
-                RETURNING id, user_id, created_at, updated_at
+                RETURNING id, user_id, title, created_at, updated_at
                 """,
                 session_id
             )
@@ -214,6 +236,7 @@ class SessionRepository:
             return Session(
                 id=str(record['id']),
                 user_id=str(record['user_id']),
+                title=record['title'],
                 created_at=record['created_at'],
                 updated_at=record['updated_at']
             )
@@ -227,6 +250,70 @@ class SessionRepository:
                 session_id
             )
             return "DELETE 1" in result
+
+    async def update_title(self, session_id: str, title: str) -> Optional[Session]:
+        """更新会话标题"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            record = await conn.fetchrow(
+                """
+                UPDATE sessions
+                SET title = $2, updated_at = NOW()
+                WHERE id = $1
+                RETURNING id, user_id, title, created_at, updated_at
+                """,
+                session_id, title
+            )
+
+            if not record:
+                return None
+
+            return Session(
+                id=str(record['id']),
+                user_id=str(record['user_id']),
+                title=record['title'],
+                created_at=record['created_at'],
+                updated_at=record['updated_at']
+            )
+
+    async def find_with_preview(self, user_id: str) -> List[SessionPreview]:
+        """获取会话列表（含最后一条消息预览）"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            records = await conn.fetch(
+                """
+                SELECT
+                    s.id,
+                    s.title,
+                    s.updated_at,
+                    COALESCE(m.content, '') as last_message,
+                    COALESCE(m.message_count, 0) as message_count
+                FROM sessions s
+                LEFT JOIN (
+                    SELECT
+                        session_id,
+                        content,
+                        ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at DESC) as rn,
+                        COUNT(*) as message_count
+                    FROM messages
+                    GROUP BY session_id, content, created_at
+                ) m ON m.session_id = s.id AND m.rn = 1
+                WHERE s.user_id = $1
+                ORDER BY s.updated_at DESC
+                """,
+                user_id
+            )
+
+            return [
+                SessionPreview(
+                    id=str(record['id']),
+                    title=record['title'],
+                    last_message=record['last_message'],
+                    message_count=record['message_count'],
+                    updated_at=record['updated_at']
+                )
+                for record in records
+            ]
 
 
 class MessageRepository:
