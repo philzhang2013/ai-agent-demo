@@ -55,6 +55,40 @@ async def get_sessions(
     ]
 
 
+@router.post("", response_model=APISession, status_code=status.HTTP_201_CREATED)
+async def create_session(
+    current_user: TokenPayload = Depends(get_current_user)
+) -> APISession:
+    """
+    创建新会话
+
+    需要认证
+    """
+    logger.debug(f"[POST /api/sessions] 创建会话请求: user_id={current_user.sub}")
+
+    # 验证用户存在
+    user = await user_repo.find_by_id(current_user.sub)
+    if not user:
+        logger.warning(f"[POST /api/sessions] 用户不存在: user_id={current_user.sub}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    # 创建会话
+    new_session = await session_repo.create(user.id, title="新对话")
+    logger.info(f"[POST /api/sessions] 会话创建成功: session_id={new_session.id}")
+
+    return APISession(
+        id=new_session.id,
+        user_id=new_session.user_id,
+        title=new_session.title,
+        created_at=new_session.created_at,
+        updated_at=new_session.updated_at,
+        messages=[]
+    )
+
+
 @router.get("/{session_id}", response_model=APISession)
 async def get_session(
     session_id: str,
