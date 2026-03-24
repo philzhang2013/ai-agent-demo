@@ -42,8 +42,11 @@
 
 - 会话历史持久化
 - 用户数据隔离
-- 会话列表查看
-- 会话删除功能
+- **会话列表侧边栏** - 实时显示所有会话
+- **会话切换** - 快速切换不同会话
+- **会话标题编辑** - 点击标题即可编辑
+- 会话创建和删除功能
+- 会话预览（最后一条消息、消息数量、更新时间）
 
 ---
 
@@ -120,8 +123,19 @@
 │   │   ├── main.ts            # 应用入口
 │   │   ├── App.vue            # 根组件
 │   │   ├── api/               # API 客户端
+│   │   │   ├── chat.ts        # 聊天 API
+│   │   │   ├── sessions.ts    # 会话 API
+│   │   │   └── types.ts       # 类型定义
 │   │   ├── components/        # Vue 组件
+│   │   │   ├── SessionItem.vue     # 会话列表项
+│   │   │   ├── SessionSidebar.vue  # 会话侧边栏
+│   │   │   ├── ChatContainer.vue   # 聊天容器
+│   │   │   ├── MessageList.vue     # 消息列表
+│   │   │   └── InputBox.vue        # 输入框
 │   │   ├── stores/            # Pinia 状态
+│   │   │   ├── auth.ts        # 认证状态
+│   │   │   ├── chat.ts        # 聊天状态
+│   │   │   └── sessionStore.ts # 会话状态
 │   │   └── router/            # 路由配置
 │   ├── e2e/                   # E2E 测试
 │   ├── public/                # 静态资源
@@ -167,6 +181,7 @@ cp .env.example .env
 
 # 运行数据库迁移
 psql $DATABASE_URL < migrations/001_initial_schema.sql
+psql $DATABASE_URL < migrations/002_add_session_title.sql
 
 # 启动后端服务
 uvicorn app.main:app --reload --port 8000
@@ -330,7 +345,9 @@ npx playwright test --ui
 | POST   | `/api/chat/stream`   | 发送消息（SSE） | ❌   |
 | GET    | `/api/sessions`      | 获取会话列表    | ✅   |
 | GET    | `/api/sessions/{id}` | 获取会话详情    | ✅   |
+| POST   | `/api/sessions`      | 创建新会话      | ✅   |
 | DELETE | `/api/sessions/{id}` | 删除会话      | ✅   |
+| PUT    | `/api/sessions/{id}/title` | 更新会话标题 | ✅   |
 
 
 ### SSE 事件流
