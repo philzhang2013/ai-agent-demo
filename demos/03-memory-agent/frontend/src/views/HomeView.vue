@@ -23,9 +23,15 @@
         </div>
       </el-header>
 
-      <el-main>
-        <ChatContainer />
-      </el-main>
+      <el-container class="main-container">
+        <el-aside width="300px" class="sidebar-aside">
+          <SessionSidebar />
+        </el-aside>
+
+        <el-main class="chat-main">
+          <ChatContainer />
+        </el-main>
+      </el-container>
     </el-container>
   </div>
 </template>
@@ -35,6 +41,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import ChatContainer from '@/components/ChatContainer.vue'
+import SessionSidebar from '@/components/SessionSidebar.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -131,10 +138,41 @@ function handleCommand(command: string) {
   background: #f3f4f6;
 }
 
-.el-main {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 24px;
-  width: 100%;
+.main-container {
+  height: calc(100vh - 72px); /* 减去 header 高度 */
+}
+
+.sidebar-aside {
+  background-color: var(--el-bg-color);
+  border-right: 1px solid var(--el-border-color);
+  padding: 0;
+  overflow: hidden;
+}
+
+.chat-main {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 移动端优化 */
+@media (max-width: 767px) {
+  .sidebar-aside {
+    position: fixed;
+    left: 0;
+    top: 72px;
+    bottom: 0;
+    width: 280px !important;
+    z-index: 999;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+
+  .sidebar-aside.open {
+    transform: translateX(0);
+  }
+
+  .chat-main {
+    padding: 16px;
+  }
 }
 </style>
