@@ -180,14 +180,17 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   /**
-   * 初始化：加载会话列表
+   * 初始化：加载会话列表，如果没有则自动创建
    */
   async function initialize() {
     await loadSessions()
 
-    // 如果有会话且没有当前会话，自动切换到第一个
     if (sessions.value.length > 0 && !currentSessionId.value) {
+      // 有现有会话，切换到第一个
       await switchSession(sessions.value[0].id)
+    } else if (sessions.value.length === 0) {
+      // 没有会话，自动创建一个新会话
+      await createSession()
     }
   }
 

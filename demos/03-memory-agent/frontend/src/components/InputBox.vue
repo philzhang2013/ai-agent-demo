@@ -188,7 +188,7 @@ async function handleSend() {
             break
         }
       },
-      chatStore.sessionId || undefined
+      sessionStore.currentSessionId || undefined
     )
   } catch (error) {
     isStreaming.value = false

@@ -5,12 +5,15 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useSessionStore } from '@/stores/sessionStore'
 
 const authStore = useAuthStore()
+const sessionStore = useSessionStore()
 
-// 初始化认证状态
-onMounted(() => {
+// 初始化认证状态和会话
+onMounted(async () => {
   authStore.init()
+  await sessionStore.initialize()
 })
 </script>
 

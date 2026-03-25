@@ -4,16 +4,26 @@
 """
 import json
 import logging
+import uuid
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
 from app.models import ChatRequest, ChatResponse
 from app.agent.base import Agent
 from app.config import get_settings
+from app.db.repositories import MessageRepository, SessionRepository
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
+
+
+def is_valid_uuid(value: str) -> bool:
+    """检查字符串是否是有效的 UUID"""
+    try:
+        uuid.UUID(value)
+        return True
+    except (ValueError, TypeError):
+        return False
 
 
 def get_agent() -> Agent:
@@ -64,23 +74,33 @@ async def chat(request: ChatRequest, agent: Agent = Depends(get_agent)):
 async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
     """流式聊天端点（SSE）"""
     session_id = request.session_id or "default"
-    logger.info(f"[POST /api/chat/stream] session_id={session_id}, message={request.message[:50]}{'...' if len(request.message) > 50 else ''}")
+    user_message = request.message
+    logger.info(f"[POST /api/chat/stream] session_id={session_id}, message={user_message[:50]}{'...' if len(user_message) > 50 else ''}")
+
+    # 初始化仓库
+    message_repo = MessageRepository()
+    session_repo = SessionRepository()
 
     async def event_generator():
         """生成 SSE 事件"""
         event_count = 0
+        reasoning_buffer = []
+        content_buffer = []
+
         try:
             # 使用 Agent 的流式处理方法
-            async for event in agent.process_message_stream(request.message):
+            async for event in agent.process_message_stream(user_message):
                 event_count += 1
 
                 # 根据事件类型发送不同的 SSE 事件
                 if event["event"] == "reasoning":
+                    reasoning_buffer.append(event["content"])
                     yield {
                         "event": "reasoning",
                         "data": json.dumps({"content": event["content"]}, ensure_ascii=False)
                     }
                 elif event["event"] == "content":
+                    content_buffer.append(event["content"])
                     yield {
                         "event": "token",
                         "data": json.dumps({"content": event["content"]}, ensure_ascii=False)
@@ -111,6 +131,38 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
                             "error": event["error"]
                         }, ensure_ascii=False)
                     }
+
+            # 流式响应完成，保存消息到数据库（只在有有效 session_id 时）
+            full_content = "".join(reasoning_buffer) + "".join(content_buffer)
+
+            if is_valid_uuid(session_id):
+                try:
+                    # 保存用户消息
+                    await message_repo.create(
+                        session_id=session_id,
+                        role="user",
+                        content=user_message
+                    )
+                    logger.debug(f"[POST /api/chat/stream] 用户消息已保存, session_id={session_id}")
+
+                    # 保存助手回复
+                    if full_content:
+                        await message_repo.create(
+                            session_id=session_id,
+                            role="assistant",
+                            content=full_content
+                        )
+                        logger.debug(f"[POST /api/chat/stream] 助手回复已保存, session_id={session_id}")
+
+                    # 更新会话时间戳
+                    await session_repo.update(session_id)
+                    logger.debug(f"[POST /api/chat/stream] 会话时间戳已更新, session_id={session_id}")
+
+                except Exception as db_error:
+                    logger.error(f"[POST /api/chat/stream] 数据库保存失败: {db_error}", exc_info=True)
+                    # 不中断响应，只是记录错误
+            else:
+                logger.debug(f"[POST /api/chat/stream] 跳过保存，无效的 session_id: {session_id}")
 
             # 发送完成事件
             logger.info(f"[POST /api/chat/stream] 流式完成, session_id={session_id}, events={event_count}")
