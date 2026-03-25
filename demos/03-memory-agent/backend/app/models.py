@@ -77,6 +77,21 @@ class Session(BaseModel):
     """会话"""
     id: str = Field(..., description="会话 ID")
     user_id: str = Field(..., description="用户 ID")
+    title: str = Field(default="新对话", description="会话标题")
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
     messages: List[Message] = Field(default_factory=list, description="消息列表")
+
+
+class SessionPreview(BaseModel):
+    """会话预览（用于列表显示）"""
+    id: str = Field(..., description="会话 ID")
+    title: str = Field(..., description="会话标题")
+    last_message: str = Field(default="", description="最后一条消息预览")
+    message_count: int = Field(default=0, description="消息数量")
+    updated_at: datetime = Field(..., description="更新时间")
+
+
+class TitleUpdateRequest(BaseModel):
+    """会话标题更新请求"""
+    title: str = Field(..., min_length=1, max_length=200, description="新标题")
