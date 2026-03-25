@@ -35,9 +35,11 @@ import { ref, watch, nextTick, computed } from 'vue'
 import { Promotion } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useChatStore } from '@/stores/chat'
+import { useSessionStore } from '@/stores/sessionStore'
 import { chatAPI } from '@/api/chat'
 
 const chatStore = useChatStore()
+const sessionStore = useSessionStore()
 const inputMessage = ref('')
 const textareaRef = ref<HTMLTextAreaElement>()
 const isStreaming = ref(false)
@@ -72,6 +74,9 @@ function handleKeydown(e: KeyboardEvent) {
 async function handleSend() {
   const message = inputMessage.value.trim()
   if (!message || isStreaming.value) return
+
+  // 判断是否是第一条消息（用于自动更新标题）
+  const isFirstMessage = chatStore.messages.length === 0
 
   // 添加用户消息
   chatStore.addUserMessage(message)
@@ -160,6 +165,14 @@ async function handleSend() {
               chatStore.setSessionId(event.session_id)
             }
             chatStore.setLoading(false)
+
+            // 如果是第一条消息，更新会话标题为消息内容（截断到30个字符）
+            if (isFirstMessage && sessionStore.currentSessionId) {
+              const title = message.length > 30 ? message.slice(0, 30) + '...' : message
+              sessionStore.updateSessionTitle(sessionStore.currentSessionId, title).catch(() => {
+                // 静默处理错误，不影响用户体验
+              })
+            }
             break
 
           case 'error':
