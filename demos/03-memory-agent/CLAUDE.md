@@ -44,7 +44,9 @@ backend/app/
 ├── providers/       # LLM 抽象（base + zhipuai）
 ├── api/             # 路由（chat, auth, sessions, health）
 ├── auth/            # 认证（JWT, password, dependencies）
-└── db/              # 数据库（connection, repositories）
+├── db/              # 数据库（connection, repositories）
+└── memory/          # 📚 长短记忆系统（阶段A）
+    └── manager.py   # MemoryManager - 摘要生成、上下文构建
 ```
 
 **关键模式**：
@@ -52,6 +54,7 @@ backend/app/
 - **Agent 循环** - ReAct 模式（LLM → 工具 → LLM）
 - **SSE 流式** - 逐 token 返回
 - **Repository** - 数据访问封装
+- **MemoryManager** - 分层记忆管理（长记忆摘要 + 短记忆消息）
 
 ### 前端 (Vue 3)
 
