@@ -104,6 +104,80 @@ class TestZhipuClient:
         assert response.tool_calls[0].function.arguments == {"expression": "1+1"}
 
     @pytest.mark.asyncio
+    async def test_should_prefer_content_over_reasoning_content(self):
+        """测试应该优先使用 content 字段而非 reasoning_content
+
+        GLM-5 等模型可能同时返回 reasoning_content（思维链）和 content（实际回复）。
+        对于摘要生成等场景，应该使用 content 而不是 reasoning_content。
+        """
+        mock_response = MagicMock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "这是实际回复内容",
+                    "reasoning_content": "1. 分析请求...\n2. 思考过程..."
+                }
+            }],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15
+            }
+        }
+
+        async def mock_post(*args, **kwargs):
+            return mock_response
+
+        with patch("httpx.AsyncClient.post", mock_post):
+            client = ZhipuClient("test-api-key")
+            response = await client.chat(
+                model="glm-5",
+                messages=[ChatMessage(role="user", content="生成摘要")],
+                stream=False
+            )
+
+        # 应该使用 content 字段，而不是 reasoning_content
+        assert response.content == "这是实际回复内容"
+        assert "分析请求" not in response.content
+        assert "思考过程" not in response.content
+
+    @pytest.mark.asyncio
+    async def test_should_fallback_to_reasoning_content_when_content_empty(self):
+        """测试当 content 为空时应该回退到 reasoning_content"""
+        mock_response = MagicMock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",  # 空 content
+                    "reasoning_content": "思考过程内容"
+                }
+            }],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15
+            }
+        }
+
+        async def mock_post(*args, **kwargs):
+            return mock_response
+
+        with patch("httpx.AsyncClient.post", mock_post):
+            client = ZhipuClient("test-api-key")
+            response = await client.chat(
+                model="glm-5",
+                messages=[ChatMessage(role="user", content="测试")],
+                stream=False
+            )
+
+        # content 为空时，应该使用 reasoning_content
+        assert response.content == "思考过程内容"
+
+    @pytest.mark.asyncio
     async def test_should_handle_api_error(self):
         """测试应该处理 API 错误"""
         mock_response = MagicMock(spec=Response)
@@ -166,7 +240,11 @@ class TestZhipuClient:
             ):
                 tokens.append(token)
 
-        assert tokens == ["你", "好", "！"]
+        # 现在返回的是事件字典，不是字符串
+        assert len(tokens) == 3
+        assert tokens[0] == {"event": "content", "content": "你"}
+        assert tokens[1] == {"event": "content", "content": "好"}
+        assert tokens[2] == {"event": "content", "content": "！"}
 
 
 class TestBaseModels:

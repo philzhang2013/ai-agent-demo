@@ -70,7 +70,7 @@ class MemoryManager:
             messages: 消息列表，每条消息包含 role 和 content
 
         Returns:
-            str: 生成的摘要内容（已提取摘要部分），错误时返回空字符串
+            str: 生成的摘要内容，错误时返回空字符串
         """
         # 构建摘要生成的 prompt
         prompt = self._build_summary_prompt(messages)
@@ -86,45 +86,13 @@ class MemoryManager:
                 model=self.model,
                 messages=chat_messages
             )
-            raw_content = response.content.strip() if response.content else ""
-
-            # 提取摘要：查找"摘要："之后的内容
-            return self._extract_summary(raw_content)
-
+            return response.content.strip() if response.content else ""
         except Exception as e:
             # 错误处理：记录错误并返回空字符串
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"[MemoryManager] 摘要生成失败: {e}")
             return ""
-
-    def _extract_summary(self, content: str) -> str:
-        """从LLM输出中提取摘要部分
-
-        查找"摘要："或"摘要:"之后的内容，如果没有则返回原文
-
-        Args:
-            content: LLM原始输出
-
-        Returns:
-            str: 提取的摘要内容
-        """
-        if not content:
-            return ""
-
-        # 查找"摘要："（全角冒号）或"摘要:"（半角冒号）
-        markers = ["摘要：", "摘要:"]
-
-        for marker in markers:
-            if marker in content:
-                # 提取标记之后的内容
-                summary = content.split(marker, 1)[-1].strip()
-                # 移除可能的引号和多余空白
-                summary = summary.strip('"\'\n\r ')
-                return summary
-
-        # 如果没有找到标记，返回原文（去掉前后空白）
-        return content.strip()
 
     def _build_summary_prompt(self, messages: List[Dict[str, str]]) -> str:
         """构建摘要生成的 prompt

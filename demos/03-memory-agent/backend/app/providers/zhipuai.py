@@ -64,8 +64,10 @@ class ZhipuClient(LLMClient):
             choice = data.get("choices", [{}])[0]
             message = choice.get("message", {})
 
-            # 处理 content（GLM-5 使用 reasoning_content，GLM-4 使用 content）
-            content = message.get("reasoning_content") or message.get("content") or ""
+            # 处理 content（GLM-5 可能同时返回 reasoning_content 和 content）
+            # reasoning_content 是思维链，content 是实际回复内容
+            # 对于摘要生成等场景，应该使用 content 而不是 reasoning_content
+            content = message.get("content") or message.get("reasoning_content") or ""
             tool_calls = []
 
             # 提取工具调用
