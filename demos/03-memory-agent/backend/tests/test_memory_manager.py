@@ -374,3 +374,75 @@ class TestMemoryManager:
         contents = [msg["content"] for msg in context]
         assert any("消息7" in c for c in contents)  # 最新消息应该在里面
         assert any("消息6" in c for c in contents)
+
+
+class TestExtractSummary:
+    """测试 _extract_summary 方法"""
+
+    def test_extract_summary_with_fullwidth_colon(self):
+        """提取全角冒号'摘要：'之后的内容"""
+        from app.memory.manager import MemoryManager
+
+        manager = MemoryManager(Mock(), Mock(), Mock())
+        content = "1. 分析请求\n2. 思考过程\n摘要：用户张三住在北京，养了一只金毛犬。"
+
+        result = manager._extract_summary(content)
+
+        assert result == "用户张三住在北京，养了一只金毛犬。"
+
+    def test_extract_summary_with_halfwidth_colon(self):
+        """提取半角冒号'摘要:'之后的内容"""
+        from app.memory.manager import MemoryManager
+
+        manager = MemoryManager(Mock(), Mock(), Mock())
+        content = "分析过程...\n摘要: 这是一个简洁的摘要。"
+
+        result = manager._extract_summary(content)
+
+        assert result == "这是一个简洁的摘要。"
+
+    def test_extract_summary_without_marker_returns_original(self):
+        """没有标记时返回原文"""
+        from app.memory.manager import MemoryManager
+
+        manager = MemoryManager(Mock(), Mock(), Mock())
+        content = "这是一段没有标记的内容"
+
+        result = manager._extract_summary(content)
+
+        assert result == "这是一段没有标记的内容"
+
+    def test_extract_summary_empty_string(self):
+        """空字符串返回空"""
+        from app.memory.manager import MemoryManager
+
+        manager = MemoryManager(Mock(), Mock(), Mock())
+
+        assert manager._extract_summary("") == ""
+        assert manager._extract_summary(None) == ""
+
+    def test_extract_summary_removes_quotes(self):
+        """去除引号和多余空白"""
+        from app.memory.manager import MemoryManager
+
+        manager = MemoryManager(Mock(), Mock(), Mock())
+        content = '摘要："用户喜欢打篮球和足球"\n\n'
+
+        result = manager._extract_summary(content)
+
+        assert result == "用户喜欢打篮球和足球"
+
+    def test_extract_summary_with_newlines(self):
+        """处理多行内容"""
+        from app.memory.manager import MemoryManager
+
+        manager = MemoryManager(Mock(), Mock(), Mock())
+        content = """分析过程：
+1. 用户自我介绍
+2. 用户爱好
+
+摘要：用户王五住在北京，养了一只金毛犬豆豆。"""
+
+        result = manager._extract_summary(content)
+
+        assert result == "用户王五住在北京，养了一只金毛犬豆豆。"
