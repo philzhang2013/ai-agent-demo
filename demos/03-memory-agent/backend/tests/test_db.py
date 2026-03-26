@@ -22,11 +22,12 @@ class TestUserRepository:
         """测试应该创建用户"""
         repo = UserRepository()
         password_hash = hash_password("password123")
+        unique_id = str(uuid4())[:8]
 
-        user = await repo.create("testuser", password_hash)
+        user = await repo.create(f"testuser_{unique_id}", password_hash)
 
         assert user.id is not None
-        assert user.username == "testuser"
+        assert user.username == f"testuser_{unique_id}"
         assert user.password_hash == password_hash
         assert user.created_at is not None
 
@@ -35,19 +36,21 @@ class TestUserRepository:
         """测试应该根据用户名查找用户"""
         repo = UserRepository()
         password_hash = hash_password("password123")
+        unique_id = str(uuid4())[:8]
 
-        created = await repo.create("testuser", password_hash)
-        found = await repo.find_by_username("testuser")
+        created = await repo.create(f"testuser_{unique_id}", password_hash)
+        found = await repo.find_by_username(f"testuser_{unique_id}")
 
         assert found is not None
         assert found.id == created.id
-        assert found.username == "testuser"
+        assert found.username == f"testuser_{unique_id}"
 
     @pytest.mark.asyncio
     async def test_return_none_for_nonexistent_user(self):
         """测试不存在的用户应该返回 None"""
         repo = UserRepository()
-        found = await repo.find_by_username("nonexistent")
+        unique_id = str(uuid4())[:8]
+        found = await repo.find_by_username(f"nonexistent_{unique_id}")
 
         assert found is None
 
@@ -56,12 +59,13 @@ class TestUserRepository:
         """测试应该根据 ID 查找用户"""
         repo = UserRepository()
         password_hash = hash_password("password123")
+        unique_id = str(uuid4())[:8]
 
-        created = await repo.create("testuser", password_hash)
+        created = await repo.create(f"testuser_{unique_id}", password_hash)
         found = await repo.find_by_id(created.id)
 
         assert found is not None
-        assert found.username == "testuser"
+        assert found.username == f"testuser_{unique_id}"
 
 
 class TestSessionRepository:
@@ -74,7 +78,8 @@ class TestSessionRepository:
         session_repo = SessionRepository()
 
         password_hash = hash_password("password123")
-        user = await user_repo.create("testuser", password_hash)
+        unique_id = str(uuid4())[:8]
+        user = await user_repo.create(f"testuser_{unique_id}", password_hash)
 
         session = await session_repo.create(user.id)
 
@@ -89,7 +94,8 @@ class TestSessionRepository:
         session_repo = SessionRepository()
 
         password_hash = hash_password("password123")
-        user = await user_repo.create("testuser", password_hash)
+        unique_id = str(uuid4())[:8]
+        user = await user_repo.create(f"testuser_{unique_id}", password_hash)
 
         await session_repo.create(user.id)
         await session_repo.create(user.id)
@@ -105,7 +111,8 @@ class TestSessionRepository:
         session_repo = SessionRepository()
 
         password_hash = hash_password("password123")
-        user = await user_repo.create("testuser", password_hash)
+        unique_id = str(uuid4())[:8]
+        user = await user_repo.create(f"testuser_{unique_id}", password_hash)
 
         created = await session_repo.create(user.id)
         found = await session_repo.find_by_id(created.id)
@@ -120,7 +127,8 @@ class TestSessionRepository:
         session_repo = SessionRepository()
 
         password_hash = hash_password("password123")
-        user = await user_repo.create("testuser", password_hash)
+        unique_id = str(uuid4())[:8]
+        user = await user_repo.create(f"testuser_{unique_id}", password_hash)
 
         session = await session_repo.create(user.id)
         await session_repo.delete(session.id)
@@ -140,7 +148,8 @@ class TestMessageRepository:
         message_repo = MessageRepository()
 
         password_hash = hash_password("password123")
-        user = await user_repo.create("testuser", password_hash)
+        unique_id = str(uuid4())[:8]
+        user = await user_repo.create(f"testuser_{unique_id}", password_hash)
         session = await session_repo.create(user.id)
 
         message = await message_repo.create(
@@ -162,7 +171,8 @@ class TestMessageRepository:
         message_repo = MessageRepository()
 
         password_hash = hash_password("password123")
-        user = await user_repo.create("testuser", password_hash)
+        unique_id = str(uuid4())[:8]
+        user = await user_repo.create(f"testuser_{unique_id}", password_hash)
         session = await session_repo.create(user.id)
 
         await message_repo.create(session.id, "user", "Hello")
@@ -182,7 +192,8 @@ class TestMessageRepository:
         message_repo = MessageRepository()
 
         password_hash = hash_password("password123")
-        user = await user_repo.create("testuser", password_hash)
+        unique_id = str(uuid4())[:8]
+        user = await user_repo.create(f"testuser_{unique_id}", password_hash)
         session = await session_repo.create(user.id)
 
         await message_repo.create(session.id, "user", "Hello")

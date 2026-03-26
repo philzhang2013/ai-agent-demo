@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # 全局连接池
 _pool: Pool | None = None
+_pool_loop: asyncio.AbstractEventLoop | None = None  # 记录创建连接池时的事件循环
 
 
 class AsyncConnectionContext:
@@ -36,19 +37,32 @@ class AsyncConnectionContext:
 
 async def get_pool() -> Pool:
     """获取连接池"""
-    global _pool
+    global _pool, _pool_loop
 
-    if _pool is None:
-        logger.info(f"[数据库连接池] 创建连接池: min_size=2, max_size=10")
+    current_loop = asyncio.get_running_loop()
+
+    # 如果连接池不存在，或者事件循环已更改，重新创建连接池
+    if _pool is None or _pool_loop != current_loop:
+        # 关闭旧连接池
+        if _pool is not None:
+            logger.info("[数据库连接池] 检测到事件循环变化，关闭旧连接池")
+            try:
+                await _pool.close()
+            except Exception:
+                pass
+            _pool = None
+
+        logger.info("[数据库连接池] 创建新连接池: min_size=2, max_size=10")
         _pool = await asyncpg.create_pool(
             settings.database_url,
             min_size=2,
             max_size=10,
             command_timeout=60
         )
+        _pool_loop = current_loop
         logger.info("[数据库连接池] 连接池创建成功")
     else:
-        logger.debug(f"[数据库连接池] 使用现有连接池")
+        logger.debug("[数据库连接池] 使用现有连接池")
 
     return _pool
 

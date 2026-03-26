@@ -38,7 +38,18 @@
       "Bash(yarn add:*)",
       "WebSearch",
       "Bash(/Users/philzhang/ClaudeCodeDemo/ai-agent-demo/demos/01-cli-agent/tsconfig.json:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(openspec status:*)",
+      "Bash(psql:*)",
+      "Bash(python:*)",
+      "Bash(source:*)",
+      "Bash(grep:*)",
+      "Bash(*pytest*)",
+      "Bash(*venv/bin/activate*pytest*)",
+      "Bash(*|*)",
+      "Bash(*&&*)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)"
     ],
     "deny": [
       "Bash(rm -rf /)",

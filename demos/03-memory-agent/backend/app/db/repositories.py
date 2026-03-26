@@ -76,6 +76,25 @@ class SessionPreview:
         self.updated_at = updated_at
 
 
+class MemorySummary:
+    """记忆摘要模型"""
+    def __init__(
+        self,
+        id: str,
+        session_id: str,
+        content: str,
+        message_count: int,
+        created_at: datetime,
+        updated_at: datetime
+    ):
+        self.id = id
+        self.session_id = session_id
+        self.content = content
+        self.message_count = message_count
+        self.created_at = created_at
+        self.updated_at = updated_at
+
+
 class UserRepository:
     """用户仓储"""
 
@@ -382,3 +401,98 @@ class MessageRepository:
                 session_id
             )
             return "DELETE" in result
+
+
+class MemorySummaryRepository:
+    """记忆摘要仓储"""
+
+    async def create(
+        self,
+        session_id: str,
+        content: str,
+        message_count: int
+    ) -> MemorySummary:
+        """
+        创建或更新记忆摘要
+        如果 session_id 已存在，则更新现有记录
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # 使用 PostgreSQL 的 UPSERT (ON CONFLICT DO UPDATE)
+            record = await conn.fetchrow(
+                """
+                INSERT INTO memory_summaries (session_id, content, message_count)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (session_id) DO UPDATE
+                SET content = EXCLUDED.content,
+                    message_count = EXCLUDED.message_count,
+                    updated_at = NOW()
+                RETURNING id, session_id, content, message_count, created_at, updated_at
+                """,
+                session_id, content, message_count
+            )
+
+            return MemorySummary(
+                id=str(record['id']),
+                session_id=str(record['session_id']),
+                content=record['content'],
+                message_count=record['message_count'],
+                created_at=record['created_at'],
+                updated_at=record['updated_at']
+            )
+
+    async def find_by_session_id(self, session_id: str) -> Optional[MemorySummary]:
+        """根据会话 ID 查找记忆摘要"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            record = await conn.fetchrow(
+                """
+                SELECT id, session_id, content, message_count, created_at, updated_at
+                FROM memory_summaries
+                WHERE session_id = $1
+                """,
+                session_id
+            )
+
+            if not record:
+                return None
+
+            return MemorySummary(
+                id=str(record['id']),
+                session_id=str(record['session_id']),
+                content=record['content'],
+                message_count=record['message_count'],
+                created_at=record['created_at'],
+                updated_at=record['updated_at']
+            )
+
+    async def update(
+        self,
+        session_id: str,
+        content: str,
+        message_count: int
+    ) -> Optional[MemorySummary]:
+        """更新记忆摘要"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            record = await conn.fetchrow(
+                """
+                UPDATE memory_summaries
+                SET content = $2, message_count = $3, updated_at = NOW()
+                WHERE session_id = $1
+                RETURNING id, session_id, content, message_count, created_at, updated_at
+                """,
+                session_id, content, message_count
+            )
+
+            if not record:
+                return None
+
+            return MemorySummary(
+                id=str(record['id']),
+                session_id=str(record['session_id']),
+                content=record['content'],
+                message_count=record['message_count'],
+                created_at=record['created_at'],
+                updated_at=record['updated_at']
+            )

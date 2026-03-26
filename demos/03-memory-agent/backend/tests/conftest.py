@@ -4,6 +4,7 @@ Pytest 配置文件
 """
 import os
 import pytest
+import pytest_asyncio
 
 # 设置测试环境变量（不覆盖 DATABASE_URL，从 .env 读取）
 os.environ.update({
@@ -12,10 +13,7 @@ os.environ.update({
 })
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """创建事件循环用于所有测试"""
-    import asyncio
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# 使用 pytest-asyncio 默认的 event_loop fixture 配置
+pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+

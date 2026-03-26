@@ -89,9 +89,9 @@ class TestAgent:
     async def test_should_stream_response(self):
         """测试应该流式输出响应"""
         async def mock_stream(*args, **kwargs):
-            yield "你"
-            yield "好"
-            yield "！"
+            yield {"event": "content", "content": "你"}
+            yield {"event": "content", "content": "好"}
+            yield {"event": "content", "content": "！"}
 
         mock_client = Mock()
         mock_client.chat_stream = mock_stream
@@ -102,7 +102,11 @@ class TestAgent:
             async for token in agent.process_message_stream("你好"):
                 tokens.append(token)
 
-        assert tokens == ["你", "好", "！"]
+        # 现在返回的是事件字典，不是字符串
+        assert len(tokens) == 3
+        assert tokens[0] == {"event": "content", "content": "你"}
+        assert tokens[1] == {"event": "content", "content": "好"}
+        assert tokens[2] == {"event": "content", "content": "！"}
 
     @pytest.mark.asyncio
     async def test_should_track_message_history(self):

@@ -344,6 +344,176 @@ class Agent:
                 "error": "达到最大迭代次数"
             }
 
+    async def process_message_stream_with_context(self, messages: List[Dict[str, str]]) -> AsyncIterator[Dict[str, Any]]:
+        """
+        使用预构建的上下文进行流式处理（用于记忆系统集成）
+
+        Args:
+            messages: 上下文消息列表，包含 system/user/assistant 角色
+
+        返回事件字典:
+        - {"event": "reasoning", "content": "..."} - 思维链内容
+        - {"event": "content", "content": "..."} - 普通内容
+        - {"event": "tool_call", "tool_calls": [...]} - 工具调用
+        - {"event": "tool_result", "tool": "...", "result": "..."} - 工具结果
+        - {"event": "tool_error", "tool": "...", "error": "..."} - 工具错误
+        """
+        logger.info(f"[带上下文的流式处理开始] 消息数={len(messages)}")
+
+        # 重置消息历史，使用提供的上下文
+        self.messages = [ChatMessage(role="system", content=self._get_system_prompt())]
+
+        # 添加上下文消息（跳过第一个 system，因为我们已经添加了）
+        for msg in messages:
+            if msg.get("role") == "system":
+                # 合并到系统提示词中
+                self.messages[0] = ChatMessage(
+                    role="system",
+                    content=self._get_system_prompt() + "\n\n" + msg.get("content", "")
+                )
+            else:
+                self.messages.append(ChatMessage(
+                    role=msg.get("role", "user"),
+                    content=msg.get("content", "")
+                ))
+
+        # 转换消息为可读格式用于日志
+        messages_for_log = [{"role": m.role, "content": m.content[:50]} for m in self.messages]
+        logger.info(f"[带上下文的流式处理] 消息历史: {json.dumps(messages_for_log, ensure_ascii=False)}")
+
+        iteration = 0
+        tool_calls_executed: List[str] = []
+
+        while iteration < self.max_iterations:
+            iteration += 1
+            logger.debug(f"[上下文流式迭代 {iteration}/{self.max_iterations}] 开始 LLM 调用")
+
+            # 获取工具定义
+            tool_definitions = self._get_tool_definitions()
+
+            # 调用 LLM 流式接口
+            event_count = 0
+            reasoning_buffer = []
+            content_buffer = []
+            tool_calls_buffer = []
+
+            try:
+                async for event in self.client.chat_stream(
+                    model=self.model,
+                    messages=self.messages,
+                    tools=tool_definitions
+                ):
+                    event_count += 1
+
+                    # 处理不同类型的事件
+                    if event["event"] == "reasoning":
+                        reasoning_buffer.append(event["content"])
+                        yield event
+                    elif event["event"] == "content":
+                        content_buffer.append(event["content"])
+                        yield event
+                    elif event["event"] == "tool_calls":
+                        tool_calls_buffer.extend(event["tool_calls"])
+                        yield event
+
+                logger.debug(f"[上下文流式迭代 {iteration}] 收到 {event_count} 个事件")
+
+                # 处理工具调用
+                if tool_calls_buffer:
+                    yield {
+                        "event": "tool_call",
+                        "tool_calls": tool_calls_buffer
+                    }
+
+                    # 添加工具调用消息
+                    for tc in tool_calls_buffer:
+                        self.messages.append(ChatMessage(
+                            role="assistant",
+                            content=f"调用工具: {tc.get('name', 'unknown')}"
+                        ))
+
+                        tool_name = tc.get("name", "unknown")
+                        tool_args_str = tc.get("arguments", "{}")
+
+                        # 解析工具参数
+                        try:
+                            if isinstance(tool_args_str, str):
+                                tool_args = json.loads(tool_args_str)
+                            else:
+                                tool_args = tool_args_str
+                        except json.JSONDecodeError:
+                            yield {
+                                "event": "tool_error",
+                                "tool": tool_name,
+                                "error": f"无效的参数格式: {tool_args_str}"
+                            }
+                            continue
+
+                        logger.info(f"[上下文执行工具] name={tool_name}, args={tool_args}")
+
+                        # 执行工具
+                        try:
+                            tool = find_tool(tool_name)
+                            if tool:
+                                result = tool.execute(tool_args)
+                                tool_calls_executed.append(tool_name)
+
+                                yield {
+                                    "event": "tool_result",
+                                    "tool": tool_name,
+                                    "result": result
+                                }
+
+                                self.messages.append(ChatMessage(
+                                    role="user",
+                                    content=f"[工具 {tool_name} 的结果: {result}]"
+                                ))
+                            else:
+                                yield {
+                                    "event": "tool_error",
+                                    "tool": tool_name,
+                                    "error": f"未找到工具: {tool_name}"
+                                }
+                        except Exception as e:
+                            yield {
+                                "event": "tool_error",
+                                "tool": tool_name,
+                                "error": str(e)
+                            }
+
+                    continue
+                else:
+                    # 没有工具调用，处理完成
+                    full_content = ""
+                    if reasoning_buffer:
+                        full_content += "".join(reasoning_buffer)
+                    if content_buffer:
+                        full_content += "".join(content_buffer)
+
+                    self.messages.append(ChatMessage(
+                        role="assistant",
+                        content=full_content
+                    ))
+
+                    logger.info(f"[上下文流式处理完成] 已执行工具: {tool_calls_executed if tool_calls_executed else '无'}")
+                    break
+
+            except Exception as e:
+                logger.error(f"[上下文流式处理错误] {str(e)}", exc_info=True)
+                yield {
+                    "event": "error",
+                    "error": str(e)
+                }
+                break
+
+        # 达到最大迭代次数
+        if iteration >= self.max_iterations:
+            logger.warning(f"[上下文达到最大迭代次数] max_iterations={self.max_iterations}")
+            yield {
+                "event": "error",
+                "error": "达到最大迭代次数"
+            }
+
     def get_messages(self) -> List[ChatMessage]:
         """获取消息历史"""
         return self.messages.copy()

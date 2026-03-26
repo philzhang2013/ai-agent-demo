@@ -9,9 +9,10 @@ from fastapi import APIRouter, HTTPException, Depends
 from sse_starlette.sse import EventSourceResponse
 
 from app.models import ChatRequest, ChatResponse
-from app.agent.base import Agent
+from app.agent.base import Agent, create_llm_client
 from app.config import get_settings
-from app.db.repositories import MessageRepository, SessionRepository
+from app.db.repositories import MessageRepository, SessionRepository, MemorySummaryRepository
+from app.memory.manager import MemoryManager
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -77,9 +78,16 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
     user_message = request.message
     logger.info(f"[POST /api/chat/stream] session_id={session_id}, message={user_message[:50]}{'...' if len(user_message) > 50 else ''}")
 
-    # 初始化仓库
+    # 初始化仓库和 MemoryManager
     message_repo = MessageRepository()
     session_repo = SessionRepository()
+    summary_repo = MemorySummaryRepository()
+
+    # 初始化 MemoryManager（需要 LLM 客户端）
+    settings = get_settings()
+    from app.agent.base import create_llm_client
+    llm_client = create_llm_client("zhipuai", settings.zhipuai_api_key)
+    memory_manager = MemoryManager(message_repo, summary_repo, llm_client, settings.zhipuai_model)
 
     async def event_generator():
         """生成 SSE 事件"""
@@ -88,8 +96,68 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
         content_buffer = []
 
         try:
-            # 使用 Agent 的流式处理方法
-            async for event in agent.process_message_stream(user_message):
+            # 首先保存用户消息（这样消息数才准确）
+            if is_valid_uuid(session_id):
+                try:
+                    await message_repo.create(
+                        session_id=session_id,
+                        role="user",
+                        content=user_message
+                    )
+                    logger.debug(f"[POST /api/chat/stream] 用户消息已保存, session_id={session_id}")
+
+                    # 检查是否需要生成摘要
+                    try:
+                        should_summarize = await memory_manager.should_summarize(session_id)
+                        if should_summarize:
+                            logger.info(f"[POST /api/chat/stream] 触发摘要生成, session_id={session_id}")
+
+                            # 获取所有消息生成摘要
+                            all_messages = await message_repo.find_by_session_id(session_id)
+                            messages_for_summary = [
+                                {"role": msg.role, "content": msg.content}
+                                for msg in all_messages
+                            ]
+
+                            # 生成摘要
+                            summary_content = await memory_manager.generate_summary(messages_for_summary)
+
+                            if summary_content:
+                                # 保存/更新摘要
+                                await summary_repo.create(
+                                    session_id=session_id,
+                                    content=summary_content,
+                                    message_count=len(all_messages)
+                                )
+                                logger.info(f"[POST /api/chat/stream] 摘要已保存, session_id={session_id}, message_count={len(all_messages)}")
+                            else:
+                                logger.warning(f"[POST /api/chat/stream] 摘要生成失败或为空, session_id={session_id}")
+                    except Exception as summary_error:
+                        # 摘要生成失败不阻断主流程
+                        logger.error(f"[POST /api/chat/stream] 摘要生成异常: {summary_error}", exc_info=True)
+
+                except Exception as db_error:
+                    logger.error(f"[POST /api/chat/stream] 保存用户消息失败: {db_error}", exc_info=True)
+
+            # 使用 MemoryManager 构建上下文
+            if is_valid_uuid(session_id):
+                try:
+                    context_messages = await memory_manager.get_context(session_id)
+                    # 上下文最后一个消息是用户刚发的，需要替换成当前消息
+                    # 移除最后一个用户消息，添加当前消息
+                    if context_messages and context_messages[-1].get("role") == "user":
+                        context_messages = context_messages[:-1]
+                    context_messages.append({"role": "user", "content": user_message})
+                    logger.debug(f"[POST /api/chat/stream] 使用记忆上下文, session_id={session_id}, context_length={len(context_messages)}")
+                except Exception as ctx_error:
+                    logger.error(f"[POST /api/chat/stream] 获取上下文失败: {ctx_error}", exc_info=True)
+                    # 失败时使用原始消息
+                    context_messages = [{"role": "user", "content": user_message}]
+            else:
+                context_messages = [{"role": "user", "content": user_message}]
+
+            # 使用上下文调用 Agent 的流式处理方法
+            async for event in agent.process_message_stream_with_context(context_messages):
                 event_count += 1
 
                 # 根据事件类型发送不同的 SSE 事件
@@ -106,7 +174,6 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
                         "data": json.dumps({"content": event["content"]}, ensure_ascii=False)
                     }
                 elif event["event"] == "tool_call":
-                    # 工具调用事件
                     yield {
                         "event": "tool_call",
                         "data": json.dumps({
@@ -114,7 +181,6 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
                         }, ensure_ascii=False)
                     }
                 elif event["event"] == "tool_result":
-                    # 工具结果事件
                     yield {
                         "event": "tool_result",
                         "data": json.dumps({
@@ -123,7 +189,6 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
                         }, ensure_ascii=False)
                     }
                 elif event["event"] == "tool_error":
-                    # 工具错误事件
                     yield {
                         "event": "tool_error",
                         "data": json.dumps({
@@ -132,20 +197,11 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
                         }, ensure_ascii=False)
                     }
 
-            # 流式响应完成，保存消息到数据库（只在有有效 session_id 时）
+            # 流式响应完成，保存助手回复到数据库
             full_content = "".join(reasoning_buffer) + "".join(content_buffer)
 
             if is_valid_uuid(session_id):
                 try:
-                    # 保存用户消息
-                    await message_repo.create(
-                        session_id=session_id,
-                        role="user",
-                        content=user_message
-                    )
-                    logger.debug(f"[POST /api/chat/stream] 用户消息已保存, session_id={session_id}")
-
-                    # 保存助手回复
                     if full_content:
                         await message_repo.create(
                             session_id=session_id,
@@ -160,9 +216,6 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
 
                 except Exception as db_error:
                     logger.error(f"[POST /api/chat/stream] 数据库保存失败: {db_error}", exc_info=True)
-                    # 不中断响应，只是记录错误
-            else:
-                logger.debug(f"[POST /api/chat/stream] 跳过保存，无效的 session_id: {session_id}")
 
             # 发送完成事件
             logger.info(f"[POST /api/chat/stream] 流式完成, session_id={session_id}, events={event_count}")
@@ -175,7 +228,6 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
             error_msg = str(e)
             logger.error(f"[POST /api/chat/stream] 错误: {error_msg}", exc_info=True)
 
-            # 提供更友好的错误信息
             if "1113" in error_msg or "余额不足" in error_msg:
                 friendly_error = "API 余额不足，请联系管理员充值"
             elif "429" in error_msg or "频率" in error_msg:
@@ -187,7 +239,6 @@ async def chat_stream(request: ChatRequest, agent: Agent = Depends(get_agent)):
 
             logger.warning(f"[POST /api/chat/stream] 友好错误信息: {friendly_error}")
 
-            # 发送错误事件
             yield {
                 "event": "error",
                 "data": json.dumps({"error": friendly_error}, ensure_ascii=False)

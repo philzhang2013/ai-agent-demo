@@ -95,3 +95,20 @@ class SessionPreview(BaseModel):
 class TitleUpdateRequest(BaseModel):
     """会话标题更新请求"""
     title: str = Field(..., min_length=1, max_length=200, description="新标题")
+
+
+# ========== 记忆摘要相关 ==========
+class MemorySummary(BaseModel):
+    """记忆摘要"""
+    id: str = Field(..., description="摘要 ID")
+    session_id: str = Field(..., description="会话 ID")
+    content: str = Field(..., description="摘要内容")
+    message_count: int = Field(..., description="总结了多少条消息")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
+
+
+class MemorySummaryCreate(BaseModel):
+    """创建记忆摘要请求"""
+    content: str = Field(..., min_length=1, description="摘要内容")
+    message_count: int = Field(..., ge=1, description="总结的消息数量")
