@@ -95,6 +95,21 @@ async function handleSend() {
   chatStore.addAssistantMessage('')
   let tempContent = ''
 
+  // 超时保护（60秒）
+  const timeoutId = setTimeout(() => {
+    if (isStreaming.value) {
+      console.error('请求超时')
+      isStreaming.value = false
+      chatStore.clearToolCalls()
+      chatStore.setLoading(false)
+      ElMessage.error('请求超时，请稍后重试')
+      // 如果有部分内容，保留；否则移除空消息
+      if (tempContent === '' && chatStore.reasoningBuffer === '') {
+        chatStore.removeLastMessage()
+      }
+    }
+  }, 60000)
+
   try {
     chatAPI.sendMessageStream(
       message,
@@ -158,7 +173,8 @@ async function handleSend() {
             break
 
           case 'done':
-            // 完成
+            // 完成 - 清除超时
+            clearTimeout(timeoutId)
             isStreaming.value = false
             chatStore.clearToolCalls()
             if (event.session_id) {
@@ -176,12 +192,26 @@ async function handleSend() {
             break
 
           case 'error':
-            // 错误
+            // 错误处理 - 确保所有状态重置
+            clearTimeout(timeoutId)
+            console.error('SSE 错误:', event.error)
             isStreaming.value = false
             chatStore.clearToolCalls()
-            ElMessage.error(event.error || '发送失败')
             chatStore.setLoading(false)
-            // 移除空消息
+
+            // 显示友好的错误提示
+            const errorMsg = event.error || '发送失败'
+            if (errorMsg.includes('429') || errorMsg.includes('繁忙')) {
+              ElMessage.error('Kimi 服务繁忙，请稍后重试')
+            } else if (errorMsg.includes('401') || errorMsg.includes('认证')) {
+              ElMessage.error('API 认证失败，请联系管理员')
+            } else if (errorMsg.includes('网络') || errorMsg.includes('fetch')) {
+              ElMessage.error('网络连接失败，请检查网络')
+            } else {
+              ElMessage.error(errorMsg)
+            }
+
+            // 移除空消息（如果没有任何内容生成）
             if (tempContent === '' && chatStore.reasoningBuffer === '') {
               chatStore.removeLastMessage()
             }
@@ -191,10 +221,16 @@ async function handleSend() {
       sessionStore.currentSessionId || undefined
     )
   } catch (error) {
+    clearTimeout(timeoutId)
+    console.error('发送消息异常:', error)
     isStreaming.value = false
     chatStore.clearToolCalls()
-    ElMessage.error('发送失败，请稍后重试')
     chatStore.setLoading(false)
+    ElMessage.error('发送失败，请稍后重试')
+    // 移除空消息
+    if (tempContent === '' && chatStore.reasoningBuffer === '') {
+      chatStore.removeLastMessage()
+    }
   }
 }
 </script>

@@ -528,7 +528,10 @@ class Agent:
 
 def create_llm_client(provider: str, api_key: str) -> LLMClient:
     """创建 LLM 客户端"""
-    if provider == "zhipuai":
+    if provider == "kimi":
+        from app.providers.kimi import KimiClient
+        return KimiClient(api_key)
+    elif provider == "zhipuai":
         from app.providers.zhipuai import ZhipuClient
         return ZhipuClient(api_key)
     else:

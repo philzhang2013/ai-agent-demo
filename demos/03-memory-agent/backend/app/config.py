@@ -11,12 +11,34 @@ class Settings(BaseSettings):
     """应用配置类"""
 
     # ========== LLM 提供商配置 ==========
-    zhipuai_api_key: str = Field(..., description="智谱 AI API Key")
-    zhipuai_base_url: Optional[str] = Field(
+    # 默认使用 Kimi
+    llm_provider: str = Field(default="kimi", description="LLM 提供商 (kimi 或 zhipuai)")
+
+    # Kimi API 配置
+    kimi_api_key: str = Field(..., description="Kimi API Key")
+    kimi_base_url: str = Field(
+        default="https://api.moonshot.cn/v1",
+        description="Kimi Base URL"
+    )
+    kimi_model: str = Field(default="kimi-for-coding", description="Kimi 模型")
+
+    # 智谱 AI 配置（保留兼容）
+    zhipuai_api_key: str = Field(default="", description="智谱 AI API Key")
+    zhipuai_base_url: str = Field(
         default="https://open.bigmodel.cn/api/coding/paas/v4",
         description="智谱 AI Base URL (Coding Plan)"
     )
-    zhipuai_model: str = Field(default="glm-5", description="智谱 AI 模型 (Coding Plan 使用 glm-5)")
+    zhipuai_model: str = Field(default="glm-5", description="智谱 AI 模型")
+
+    # ========== Embedding 配置 ==========
+    # Embedding 可以独立配置（默认使用智谱，因为 Kimi 的 embedding 需要特殊权限）
+    embedding_provider: str = Field(default="zhipuai", description="Embedding 提供商 (zhipuai 或 kimi)")
+    embedding_api_key: str = Field(default="", description="Embedding API Key（为空则使用对应提供商的 key）")
+    embedding_base_url: str = Field(
+        default="https://open.bigmodel.cn/api/paas/v4",
+        description="Embedding Base URL"
+    )
+    embedding_model: str = Field(default="embedding-3", description="Embedding 模型")
 
     # ========== Supabase 配置 ==========
     supabase_url: Optional[str] = Field(default=None, description="Supabase URL")

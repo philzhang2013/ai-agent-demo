@@ -50,6 +50,7 @@ backend/app/
 ```
 
 **关键模式**：
+
 - **Provider 抽象** - `LLMClient` 接口便于扩展
 - **Agent 循环** - ReAct 模式（LLM → 工具 → LLM）
 - **SSE 流式** - 逐 token 返回
@@ -74,12 +75,14 @@ frontend/src/
 
 ## 工作流和规范
 
-| 文档 | 说明 | 何时阅读 |
-|------|------|----------|
-| [OpenSpec 规范](./docs/openspec.md) | 变更管理工作流 | 创建/实施变更时 |
-| [Git Worktree 工作流](./docs/git-workflow.md) | 并行开发流程 | 功能开发时 |
-| [每日日志指南](./docs/daily-log-guide.md) | 进度追踪规范 | 记录进度时 |
-| [测试规范](./docs/testing.md) | TDD 工作流 | 编写测试时 |
+
+| 文档                                         | 说明      | 何时阅读     |
+| ------------------------------------------ | ------- | -------- |
+| [OpenSpec 规范](./docs/openspec.md)          | 变更管理工作流 | 创建/实施变更时 |
+| [Git Worktree 工作流](./docs/git-workflow.md) | 并行开发流程  | 功能开发时    |
+| [每日日志指南](./docs/daily-log-guide.md)        | 进度追踪规范  | 记录进度时    |
+| [测试规范](./docs/testing.md)                  | TDD 工作流 | 编写测试时    |
+
 
 ### OpenSpec 快速参考
 
@@ -119,13 +122,20 @@ git worktree remove .claude/worktrees/{name}
 ```bash
 cd backend
 
-# 运行
-uvicorn app.main:app --reload
+# ⚠️ 确保虚拟环境已创建（只需执行一次）
+python3 -m venv .venv
 
-# 测试
+# 方式 1：使用虚拟环境 Python 直接运行（推荐）
+.venv/bin/uvicorn app.main:app --reload --port 8000
+
+# 方式 2：先激活虚拟环境，再运行
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+uvicorn app.main:app --reload --port 8000
+
+# 测试（虚拟环境激活后）
 pytest
 
-# 覆盖率
+# 覆盖率（虚拟环境激活后）
 pytest --cov=app --cov-report=html
 ```
 
@@ -152,7 +162,63 @@ npm run build
 
 ---
 
-## 代码约定
+# ✅ 强制规范（MANDATORY）
+
+## 1. 项目配置信息位于
+
+Claude Code 当前项目的配置信息都在 [env](./backend/.env)中，包含的配置
+- 数据库连接信息
+- 智普Key
+- Kimi Key
+- 默认LLM供应商
+- ...等等
+
+
+# 📌 PostgreSQL 表结构变更规范（强制）
+
+## 1. 基本原则
+
+- **所有数据库表结构变更必须通过 `psql` 执行**
+- **使用 (./backend/.env) 中的 DATABASE_URL，禁止硬编码连接信息**
+- **禁止通过以下方式修改表结构：**
+  - ❌ Python 脚本自动建表/改表
+  - ❌ ORM 自动 migration（如 SQLAlchemy auto-migrate）
+  - ❌ 手动在 GUI 工具（Navicat / DBeaver）中修改
+- ## 所有变更必须是：
+  - ✅ 显式 SQL
+  - ✅ 可审查（Reviewable）
+  - ✅ 可回滚（Rollbackable）
+
+---
+
+## 4.Migration 文件规范
+
+## 3. Migration 文件规范（强化版，Claude Code 强制理解）
+
+### ✅ 核心规则（必须遵守）
+
+- **所有表结构变更必须以 `.sql` 文件形式存在**
+- **每一次变更 = 一个独立 SQL 文件**
+- **禁止在代码中内嵌或动态生成建表/改表 SQL**
+
+---
+
+### 📌 命名规范（强约束）
+
+```text
+<日期>_<feature_name>.sql
+```
+
+### migrations目录
+
+```
+/backend/migrations
+  ├── 20260326_init_tables.sql
+  ├── 20260326_add_messages_table.sql
+  ├── 20260326_add_embedding_column.sql
+```
+
+## 3. 代码约定
 
 - **测试覆盖率**：≥ 80%
 - **提交规范**：[Conventional Commits](../../docs/git-commit-convention.md)
@@ -162,7 +228,7 @@ npm run build
 
 ---
 
-## 文档索引
+## 4. 文档索引
 
 ```
 docs/
@@ -174,3 +240,4 @@ docs/
 ├── 项目指导.md           # 项目指导文档
 └── 复盘0322.md           # 开发复盘记录
 ```
+

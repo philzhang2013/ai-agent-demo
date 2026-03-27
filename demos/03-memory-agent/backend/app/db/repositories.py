@@ -95,6 +95,37 @@ class MemorySummary:
         self.updated_at = updated_at
 
 
+class MemorySegment:
+    """记忆主题段模型"""
+    def __init__(
+        self,
+        id: str,
+        session_id: str,
+        topic_name: str,
+        start_message_id: str,
+        end_message_id: str,
+        summary_content: str,
+        importance_score: float,
+        message_count: int,
+        total_importance: float,
+        created_at: datetime,
+        updated_at: datetime,
+        embedding: Optional[List[float]] = None
+    ):
+        self.id = id
+        self.session_id = session_id
+        self.topic_name = topic_name
+        self.start_message_id = start_message_id
+        self.end_message_id = end_message_id
+        self.summary_content = summary_content
+        self.importance_score = importance_score
+        self.message_count = message_count
+        self.total_importance = total_importance
+        self.created_at = created_at
+        self.updated_at = updated_at
+        self.embedding = embedding
+
+
 class UserRepository:
     """用户仓储"""
 
@@ -496,3 +527,449 @@ class MemorySummaryRepository:
                 created_at=record['created_at'],
                 updated_at=record['updated_at']
             )
+
+
+class MemorySegmentRepository:
+    """记忆主题段仓储"""
+
+    async def create(
+        self,
+        session_id: str,
+        topic_name: str,
+        start_message_id: str,
+        end_message_id: str,
+        summary_content: str,
+        importance_score: float,
+        message_count: int,
+        total_importance: float,
+        embedding: Optional[List[float]] = None
+    ) -> MemorySegment:
+        """创建记忆主题段"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            embedding_str = None
+            if embedding:
+                embedding_str = f"[{','.join(str(x) for x in embedding)}]"
+
+            record = await conn.fetchrow(
+                """
+                INSERT INTO memory_segments (
+                    session_id, topic_name, start_message_id, end_message_id,
+                    summary_content, importance_score, message_count, total_importance, embedding
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)
+                RETURNING id, session_id, topic_name, start_message_id, end_message_id,
+                          summary_content, importance_score, message_count, total_importance,
+                          created_at, updated_at, embedding
+                """,
+                session_id, topic_name, start_message_id, end_message_id,
+                summary_content, importance_score, message_count, total_importance, embedding_str
+            )
+
+            return MemorySegment(
+                id=str(record['id']),
+                session_id=str(record['session_id']),
+                topic_name=record['topic_name'],
+                start_message_id=str(record['start_message_id']),
+                end_message_id=str(record['end_message_id']),
+                summary_content=record['summary_content'],
+                importance_score=record['importance_score'],
+                message_count=record['message_count'],
+                total_importance=record['total_importance'],
+                created_at=record['created_at'],
+                updated_at=record['updated_at'],
+                embedding=record['embedding']
+            )
+
+    async def find_by_id(self, segment_id: str) -> Optional[MemorySegment]:
+        """根据 ID 查找主题段"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            record = await conn.fetchrow(
+                """
+                SELECT id, session_id, topic_name, start_message_id, end_message_id,
+                       summary_content, importance_score, message_count, total_importance,
+                       created_at, updated_at, embedding
+                FROM memory_segments
+                WHERE id = $1
+                """,
+                segment_id
+            )
+
+            if not record:
+                return None
+
+            return MemorySegment(
+                id=str(record['id']),
+                session_id=str(record['session_id']),
+                topic_name=record['topic_name'],
+                start_message_id=str(record['start_message_id']) if record['start_message_id'] else None,
+                end_message_id=str(record['end_message_id']) if record['end_message_id'] else None,
+                summary_content=record['summary_content'],
+                importance_score=record['importance_score'],
+                message_count=record['message_count'],
+                total_importance=record['total_importance'],
+                created_at=record['created_at'],
+                updated_at=record['updated_at'],
+                embedding=record['embedding']
+            )
+
+    async def find_by_session_id(self, session_id: str) -> List[MemorySegment]:
+        """根据会话 ID 查找所有主题段"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            records = await conn.fetch(
+                """
+                SELECT id, session_id, topic_name, start_message_id, end_message_id,
+                       summary_content, importance_score, message_count, total_importance,
+                       created_at, updated_at, embedding
+                FROM memory_segments
+                WHERE session_id = $1
+                ORDER BY created_at ASC
+                """,
+                session_id
+            )
+
+            return [
+                MemorySegment(
+                    id=str(record['id']),
+                    session_id=str(record['session_id']),
+                    topic_name=record['topic_name'],
+                    start_message_id=str(record['start_message_id']) if record['start_message_id'] else None,
+                    end_message_id=str(record['end_message_id']) if record['end_message_id'] else None,
+                    summary_content=record['summary_content'],
+                    importance_score=record['importance_score'],
+                    message_count=record['message_count'],
+                    total_importance=record['total_importance'],
+                    created_at=record['created_at'],
+                    updated_at=record['updated_at'],
+                    embedding=record['embedding']
+                )
+                for record in records
+            ]
+
+    async def update(
+        self,
+        segment_id: str,
+        topic_name: Optional[str] = None,
+        summary_content: Optional[str] = None,
+        importance_score: Optional[float] = None
+    ) -> Optional[MemorySegment]:
+        """更新主题段"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            updates = []
+            params = [segment_id]
+            param_idx = 2
+
+            if topic_name is not None:
+                updates.append(f"topic_name = ${param_idx}")
+                params.append(topic_name)
+                param_idx += 1
+
+            if summary_content is not None:
+                updates.append(f"summary_content = ${param_idx}")
+                params.append(summary_content)
+                param_idx += 1
+
+            if importance_score is not None:
+                updates.append(f"importance_score = ${param_idx}")
+                params.append(importance_score)
+                param_idx += 1
+
+            if not updates:
+                return await self.find_by_id(segment_id)
+
+            query = f"""
+                UPDATE memory_segments
+                SET {', '.join(updates)}, updated_at = NOW()
+                WHERE id = $1
+                RETURNING id, session_id, topic_name, start_message_id, end_message_id,
+                          summary_content, importance_score, message_count, total_importance,
+                          created_at, updated_at, embedding
+            """
+
+            record = await conn.fetchrow(query, *params)
+
+            if not record:
+                return None
+
+            return MemorySegment(
+                id=str(record['id']),
+                session_id=str(record['session_id']),
+                topic_name=record['topic_name'],
+                start_message_id=str(record['start_message_id']) if record['start_message_id'] else None,
+                end_message_id=str(record['end_message_id']) if record['end_message_id'] else None,
+                summary_content=record['summary_content'],
+                importance_score=record['importance_score'],
+                message_count=record['message_count'],
+                total_importance=record['total_importance'],
+                created_at=record['created_at'],
+                updated_at=record['updated_at'],
+                embedding=record['embedding']
+            )
+
+    async def delete(self, segment_id: str) -> bool:
+        """删除主题段"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM memory_segments WHERE id = $1",
+                segment_id
+            )
+            return "DELETE 1" in result
+
+    async def find_by_importance_threshold(
+        self,
+        session_id: str,
+        min_importance: float
+    ) -> List[MemorySegment]:
+        """根据重要性阈值查找主题段"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            records = await conn.fetch(
+                """
+                SELECT id, session_id, topic_name, start_message_id, end_message_id,
+                       summary_content, importance_score, message_count, total_importance,
+                       created_at, updated_at, embedding
+                FROM memory_segments
+                WHERE session_id = $1 AND importance_score >= $2
+                ORDER BY importance_score DESC
+                """,
+                session_id, min_importance
+            )
+
+            return [
+                MemorySegment(
+                    id=str(record['id']),
+                    session_id=str(record['session_id']),
+                    topic_name=record['topic_name'],
+                    start_message_id=str(record['start_message_id']) if record['start_message_id'] else None,
+                    end_message_id=str(record['end_message_id']) if record['end_message_id'] else None,
+                    summary_content=record['summary_content'],
+                    importance_score=record['importance_score'],
+                    message_count=record['message_count'],
+                    total_importance=record['total_importance'],
+                    created_at=record['created_at'],
+                    updated_at=record['updated_at'],
+                    embedding=record['embedding']
+                )
+                for record in records
+            ]
+
+    async def semantic_search(
+        self,
+        session_id: str,
+        query_embedding: List[float],
+        limit: int = 5
+    ) -> List[MemorySegment]:
+        """语义搜索 - 使用向量相似度查找主题段"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
+
+            records = await conn.fetch(
+                """
+                SELECT id, session_id, topic_name, start_message_id, end_message_id,
+                       summary_content, importance_score, message_count, total_importance,
+                       created_at, updated_at, embedding,
+                       embedding <=> $2::vector as distance
+                FROM memory_segments
+                WHERE session_id = $1
+                ORDER BY embedding <=> $2::vector
+                LIMIT $3
+                """,
+                session_id, embedding_str, limit
+            )
+
+            return [
+                MemorySegment(
+                    id=str(record['id']),
+                    session_id=str(record['session_id']),
+                    topic_name=record['topic_name'],
+                    start_message_id=str(record['start_message_id']) if record['start_message_id'] else None,
+                    end_message_id=str(record['end_message_id']) if record['end_message_id'] else None,
+                    summary_content=record['summary_content'],
+                    importance_score=record['importance_score'],
+                    message_count=record['message_count'],
+                    total_importance=record['total_importance'],
+                    created_at=record['created_at'],
+                    updated_at=record['updated_at'],
+                    embedding=record['embedding']
+                )
+                for record in records
+            ]
+
+
+class ImportanceScoreRepository:
+    """重要性分数仓储 - 管理消息重要性评分和向量嵌入"""
+
+    async def update_score(
+        self,
+        message_id: str,
+        importance_score: float,
+        topic_tag: Optional[str] = None
+    ) -> bool:
+        """更新消息重要性分数和可选的主题标签"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            if topic_tag is not None:
+                result = await conn.execute(
+                    """
+                    UPDATE messages
+                    SET importance_score = $2, topic_tag = $3
+                    WHERE id = $1
+                    """,
+                    message_id, importance_score, topic_tag
+                )
+            else:
+                result = await conn.execute(
+                    """
+                    UPDATE messages
+                    SET importance_score = $2
+                    WHERE id = $1
+                    """,
+                    message_id, importance_score
+                )
+            return "UPDATE 1" in result
+
+    async def get_score(self, message_id: str) -> float:
+        """获取消息重要性分数（默认 0.5）"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            score = await conn.fetchval(
+                """
+                SELECT importance_score
+                FROM messages
+                WHERE id = $1
+                """,
+                message_id
+            )
+            return score if score is not None else 0.5
+
+    async def get_score_and_topic(self, message_id: str) -> tuple:
+        """获取消息重要性分数和主题标签"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            record = await conn.fetchrow(
+                """
+                SELECT importance_score, topic_tag
+                FROM messages
+                WHERE id = $1
+                """,
+                message_id
+            )
+            if not record:
+                return 0.5, None
+            return record['importance_score'] or 0.5, record['topic_tag']
+
+    async def batch_update_scores(
+        self,
+        updates: list[tuple[str, float]]
+    ) -> int:
+        """批量更新消息重要性分数"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.executemany(
+                """
+                UPDATE messages
+                SET importance_score = $2
+                WHERE id = $1
+                """,
+                updates
+            )
+            return len(updates)
+
+    async def get_messages_by_importance_threshold(
+        self,
+        session_id: str,
+        min_importance: float,
+        limit: int = 100
+    ) -> list[tuple[str, float, str]]:
+        """获取重要性超过阈值的消息"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            records = await conn.fetch(
+                """
+                SELECT id, importance_score, content
+                FROM messages
+                WHERE session_id = $1 AND importance_score >= $2
+                ORDER BY importance_score DESC
+                LIMIT $3
+                """,
+                session_id, min_importance, limit
+            )
+            return [
+                (str(record['id']), record['importance_score'], record['content'])
+                for record in records
+            ]
+
+    async def batch_update_topic_tags(
+        self,
+        message_ids: list[str],
+        topic_tag: str
+    ) -> int:
+        """批量更新消息的 topic_tag"""
+        if not message_ids:
+            return 0
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # 使用 unnest 批量更新
+            result = await conn.execute(
+                """
+                UPDATE messages
+                SET topic_tag = $1
+                WHERE id = ANY($2)
+                """,
+                topic_tag, message_ids
+            )
+            return int(result.split()[-1]) if "UPDATE" in result else 0
+
+    async def update_embedding(
+        self,
+        message_id: str,
+        embedding: list[float]
+    ) -> bool:
+        """更新消息向量嵌入"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            embedding_str = f"[{','.join(str(x) for x in embedding)}]"
+
+            result = await conn.execute(
+                """
+                UPDATE messages
+                SET embedding = $2::vector
+                WHERE id = $1
+                """,
+                message_id, embedding_str
+            )
+            return "UPDATE 1" in result
+
+    async def get_messages_without_embedding(
+        self,
+        session_id: str,
+        limit: int = 100
+    ) -> list[dict]:
+        """获取没有向量嵌入的消息"""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            records = await conn.fetch(
+                """
+                SELECT id, role, content, created_at
+                FROM messages
+                WHERE session_id = $1 AND embedding IS NULL
+                ORDER BY created_at ASC
+                LIMIT $2
+                """,
+                session_id, limit
+            )
+            return [
+                {
+                    'id': str(record['id']),
+                    'role': record['role'],
+                    'content': record['content'],
+                    'created_at': record['created_at']
+                }
+                for record in records
+            ]

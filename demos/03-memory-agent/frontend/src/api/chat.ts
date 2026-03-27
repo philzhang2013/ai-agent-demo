@@ -55,9 +55,19 @@ export class ChatAPI {
       })
     }).then(async (response) => {
       if (!response.ok) {
+        // HTTP 错误处理
+        let errorMsg = `HTTP ${response.status}`
+        try {
+          const errorData = await response.json()
+          if (errorData?.detail) {
+            errorMsg = errorData.detail
+          }
+        } catch {
+          // 解析失败使用默认错误
+        }
         onEvent({
           type: 'error',
-          error: `HTTP ${response.status}`
+          error: errorMsg
         })
         return
       }
@@ -79,7 +89,11 @@ export class ChatAPI {
         while (true) {
           const { done, value } = await reader.read()
 
-          if (done) break
+          if (done) {
+            // 正常结束，如果没有收到 done 事件，手动触发
+            onEvent({ type: 'done' })
+            break
+          }
 
           buffer += decoder.decode(value, { stream: true })
 
@@ -123,9 +137,15 @@ export class ChatAPI {
       } catch (e) {
         onEvent({
           type: 'error',
-          error: e instanceof Error ? e.message : '未知错误'
+          error: e instanceof Error ? e.message : '读取响应流失败'
         })
       }
+    }).catch((error) => {
+      // 网络错误或 fetch 失败
+      onEvent({
+        type: 'error',
+        error: error instanceof Error ? error.message : '网络连接失败，请检查网络'
+      })
     })
 
     // 返回取消函数
